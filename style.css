@@ -1,0 +1,56 @@
+/* ملف السلاسة والاحترافية - يحيى قاضي */
+
+/* 1. سلاسة التنقل والخطوط */
+html {
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+/* 2. تحسين تجربة اللمس على الهواتف */
+body {
+    overscroll-behavior-y: contain; /* منع الارتداد المزعج */
+    touch-action: manipulation;   /* سرعة استجابة اللمس */
+    -webkit-tap-highlight-color: transparent; /* إزالة الوميض الأزرق */
+}
+
+/* 3. حركة انسيابية لكل عناصر الموقع */
+* {
+    transition: all 0.3s cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+/* 4. تفاعل الأزرار عند الضغط (إحساس التطبيقات) */
+button:active, 
+.eagle-btn:active, 
+.menu-item:active {
+    transform: scale(0.92) !important;
+    opacity: 0.8;
+}
+
+/* 5. استقرار العناصر أثناء التحريك */
+.floating-eagle, 
+.eagle-btn, 
+.card,
+.side-menu {
+    backface-visibility: hidden;
+    transform: translateZ(0);
+    will-change: transform;
+}
+
+/* 6. تنعيم حواف الفيديو والصور */
+video, img {
+    border-radius: inherit;
+    object-fit: cover;
+}
+
+/* 7. تحسين شكل شريط التمرير (Scrollbar) ليناسب التصميم */
+::-webkit-scrollbar {
+    width: 6px;
+}
+::-webkit-scrollbar-track {
+    background: #000;
+}
+::-webkit-scrollbar-thumb {
+    background: #007A3D;
+    border-radius: 10px;
+}
