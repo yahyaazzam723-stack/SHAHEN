@@ -9,6 +9,8 @@
     <title>بوابة المطعم | شاهين إكسبريس 🦅</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- ===== [POS-PRINT] مكتبة QZ Tray للتواصل مع وكيل الطباعة المحلي ===== -->
+    <script src="https://cdn.jsdelivr.net/npm/qz-tray@2.2.4/qz-tray.js"></script>
     <style>
         :root {
             --gold: #d4af37; --gold-l: #f1d279;
@@ -350,6 +352,34 @@
             </label>
         </div>
 
+        <!-- ===== [POS-PRINT] إعدادات الطابعة الحرارية لهذا الجهاز ===== -->
+        <div style="background:rgba(52,152,219,0.06); border:1px solid #3498db; border-radius:14px; padding:15px; margin-top:14px;">
+            <p style="font-size:13px; color:#3498db; font-weight:bold; margin:0 0 10px;"><i class="fas fa-print"></i> الطابعة الحرارية لهذا الجهاز</p>
+            <div id="pos-status-badge" style="display:inline-block; border:1px solid #888; border-radius:20px; padding:6px 14px; font-size:11.5px; font-weight:bold; margin-bottom:12px;">
+                <i class="fas fa-spinner fa-spin"></i> جاري الفحص...
+            </div>
+            <div style="margin-bottom:10px;">
+                <label style="font-size:11px; opacity:0.75; display:block; margin-bottom:5px;">الطابعة المكتشفة على هذا الجهاز</label>
+                <select id="pos-printer-select" class="fi" style="margin:0;"><option value="">جاري البحث عن طابعات...</option></select>
+            </div>
+            <div style="margin-bottom:10px;">
+                <label style="font-size:11px; opacity:0.75; display:block; margin-bottom:5px;">عرض ورق الإيصال</label>
+                <select id="pos-paper-width-select" class="fi" style="margin:0;">
+                    <option value="80">80 مم (الأشيع للمطاعم)</option>
+                    <option value="58">58 مم (طابعات صغيرة محمولة)</option>
+                </select>
+            </div>
+            <button class="btn-login" style="padding:11px; font-size:12.5px;" onclick="savePosDevicePairing()"><i class="fas fa-save"></i> حفظ إعدادات هذا الجهاز</button>
+            <button class="btn-login" style="padding:9px; font-size:11.5px; margin-top:8px; background:rgba(255,255,255,0.08); color:#fff;" onclick="connectPosAgent()"><i class="fas fa-sync"></i> إعادة فحص الطابعة الآن</button>
+            <p style="font-size:10px; opacity:0.6; margin-top:10px; line-height:1.6;">
+                💡 يتطلب تثبيت برنامج <b>QZ Tray</b> المجاني مرة واحدة على هذا الجهاز ليعمل الاكتشاف التلقائي وتعطيل ظهور نافذة الطباعة كل مرة. بدون تثبيته، تستمر الطباعة بشكل عادي عبر نافذة طباعة المتصفح القياسية.
+            </p>
+            <details style="margin-top:10px;">
+                <summary style="font-size:11px; color:var(--gold); cursor:pointer;">📋 سجل عمليات الطباعة والاتصال</summary>
+                <div id="pos-log-list" style="max-height:160px; overflow-y:auto; margin-top:8px; background:rgba(0,0,0,0.3); border-radius:8px; padding:8px;"></div>
+            </details>
+        </div>
+
         <div style="background:rgba(212,175,55,0.06); border:1px solid rgba(212,175,55,0.25); border-radius:14px; padding:15px; margin-top:10px;">
             <p style="font-size:12px; color:var(--gold); font-weight:bold; margin:0 0 8px;"><i class="fas fa-info-circle"></i> ملاحظة</p>
             <p style="font-size:11px; opacity:0.7; margin:0; line-height:1.7;">
@@ -505,6 +535,8 @@
         loadOrders(true);
         loadHistory();
         renderMenuSections();
+        // [POS-PRINT] تهيئة نظام الطباعة: جلب ربط الجهاز ثم محاولة الاتصال بوكيل الطباعة المحلي
+        _loadPosDevicePairing().then(() => connectPosAgent());
         // تحديث دوري كل 5 ثواني
         // [FIX-INTERVAL-39] منع تكديس المؤقتات عند إعادة استدعاء startApp
         if (window._mainRefreshInterval39) clearInterval(window._mainRefreshInterval39);
@@ -591,56 +623,211 @@
     }
 
     // ===== جلب الطلبات =====
-    // ===== [AUTO-ACCEPT-PRINT] طباعة إيصال تلقائية بشعار المطعم عند قبول الطلب =====
-    // [MANUAL-PRINT] طباعة يدوية بضغطة زر من بطاقة الطلب — تستخدم نفس دالة الطباعة التلقائية بالضبط
-    function printOrderReceiptById(orderId) {
-        const o = allOrders.find(x => String(x.id) === String(orderId)) || historyOrders.find(x => String(x.id) === String(orderId));
-        if (!o) { showToast('⚠️ تعذّر العثور على بيانات الطلب للطباعة'); return; }
-        printOrderReceipt(o);
+    // ===========================================================================
+    // [POS-PRINT] نظام طباعة احترافي متكامل لأجهزة نقاط البيع والطابعات الحرارية
+    // ===========================================================================
+    // ملاحظة صادقة مهمة: المتصفحات تمنع أي اكتشاف صامت لطابعات USB/Serial بدون إذن المستخدم
+    // مرة واحدة على الأقل — هذا قيد أمني من المتصفح نفسه، لا يمكن تجاوزه ببرمجة JS بحتة بأي حال.
+    // الحل الرسمي المعتمد صناعياً لأنظمة نقاط البيع: وكيل طباعة محلي يعمل في الخلفية على جهاز
+    // الكاشير، ويتواصل الموقع معه عبر WebSocket محلي — هنا نستخدم QZ Tray (مجاني، مفتوح المصدر،
+    // يدعم أغلب الطابعات الحرارية القياسية دون حاجة SDK خاص بكل شركة مصنّعة).
+    // التثبيت مطلوب مرة واحدة فقط على كل جهاز POS: https://qz.io/download/
+
+    const POS_DEVICE_ID = (() => {
+        let id = localStorage.getItem('sh_pos_device_id');
+        if (!id) { id = 'pos_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10); localStorage.setItem('sh_pos_device_id', id); }
+        return id;
+    })();
+
+    let _posDeviceInfo = null;  // الصف من جدول pos_devices الخاص بهذا الجهاز (إن وُجد)
+    let _qzConnected = false;
+    let _qzReconnectTimer = null;
+    const _posLogs = []; // سجل محلي ظاهر في واجهة التطبيق لتسهيل تتبع المشاكل فوراً
+
+    function posLog(type, message) {
+        const entry = { type, message, time: new Date().toLocaleTimeString('ar-SY') };
+        _posLogs.unshift(entry);
+        if (_posLogs.length > 50) _posLogs.pop();
+        renderPosLogPanel();
+        try { _sb.from('print_logs').insert([{ device_id: POS_DEVICE_ID, status: type, detail: message }]).then(()=>{}).catch(()=>{}); } catch(e) {}
+        console.log(`[POS-PRINT][${type}]`, message);
     }
 
-    function printOrderReceipt(o) {
-        let itemsRows = '';
-        let itemsTotal = 0;
+    function renderPosLogPanel() {
+        const el = document.getElementById('pos-log-list');
+        if (!el) return;
+        const colors = { success: '#2ecc71', failed: '#e74c3c', info: '#3498db', queued: '#f39c12' };
+        el.innerHTML = _posLogs.map(l => `<div style="font-size:10.5px; padding:4px 0; border-bottom:1px solid rgba(255,255,255,0.06); color:${colors[l.type]||'#ccc'};">[${l.time}] ${escHtml(l.message)}</div>`).join('') || '<div style="font-size:11px; color:#888;">لا توجد سجلات بعد</div>';
+    }
+
+    async function _loadPosDevicePairing() {
+        try {
+            const { data, error } = await _sb.from('pos_devices').select('*').eq('device_id', POS_DEVICE_ID).maybeSingle();
+            if (error) { posLog('failed', 'تعذّر جلب إعدادات ربط الجهاز: ' + error.message); return; }
+            _posDeviceInfo = data;
+            if (data) {
+                posLog('info', `الجهاز مرتبط بمطعم: ${data.restaurant_name || '—'} | طابعة: ${data.printer_name || 'غير محددة'} | عرض الورق: ${data.paper_width_mm || 80}مم`);
+                await _sb.from('pos_devices').update({ last_seen: new Date().toISOString() }).eq('device_id', POS_DEVICE_ID);
+            } else {
+                posLog('info', `جهاز جديد غير مرتبط — معرّف الجهاز: ${POS_DEVICE_ID} (يجب ربطه من شاشة إعدادات الطابعة بالأسفل)`);
+            }
+        } catch(e) { posLog('failed', 'استثناء أثناء جلب إعدادات الربط: ' + e.message); }
+    }
+
+    async function connectPosAgent() {
+        if (typeof qz === 'undefined') { posLog('failed', 'مكتبة QZ Tray لم تُحمَّل بشكل صحيح'); return; }
+        if (qz.websocket.isActive()) { _qzConnected = true; updatePosStatusBadge(); return; }
+        try {
+            await qz.websocket.connect({ retries: 2, delay: 1 });
+            _qzConnected = true;
+            posLog('success', '✅ تم الاتصال بوكيل الطباعة المحلي (QZ Tray) بنجاح');
+            updatePosStatusBadge();
+            if (_qzReconnectTimer) { clearInterval(_qzReconnectTimer); _qzReconnectTimer = null; }
+            await _discoverPrinters();
+            await _flushPrintQueue();
+        } catch(e) {
+            _qzConnected = false;
+            posLog('failed', '⚠️ تعذّر الاتصال بوكيل الطباعة — تأكد من تثبيت وتشغيل QZ Tray على هذا الجهاز');
+            updatePosStatusBadge();
+            if (!_qzReconnectTimer) _qzReconnectTimer = setInterval(connectPosAgent, 10000);
+        }
+    }
+
+    async function _discoverPrinters() {
+        try {
+            const printers = await qz.printers.find();
+            posLog('info', `📠 الطابعات المكتشفة على هذا الجهاز: ${printers.length ? printers.join(', ') : 'لا توجد طابعات'}`);
+            const sel = document.getElementById('pos-printer-select');
+            if (sel) {
+                sel.innerHTML = printers.map(p => `<option value="${escHtml(p)}" ${_posDeviceInfo && _posDeviceInfo.printer_name === p ? 'selected' : ''}>${escHtml(p)}</option>`).join('') || '<option value="">لا توجد طابعات</option>';
+            }
+            return printers;
+        } catch(e) { posLog('failed', 'خطأ أثناء اكتشاف الطابعات: ' + e.message); return []; }
+    }
+
+    function updatePosStatusBadge() {
+        const el = document.getElementById('pos-status-badge');
+        if (!el) return;
+        if (_qzConnected) {
+            el.innerHTML = '<i class="fas fa-check-circle"></i> الطابعة متصلة ✅';
+            el.style.color = '#2ecc71'; el.style.borderColor = '#2ecc71';
+        } else {
+            el.innerHTML = '<i class="fas fa-times-circle"></i> الطابعة غير متصلة — جاري إعادة المحاولة...';
+            el.style.color = '#e74c3c'; el.style.borderColor = '#e74c3c';
+        }
+    }
+
+    async function savePosDevicePairing() {
+        if (!currentRes) { showToast('سجّل دخولك أولاً'); return; }
+        const printerName = document.getElementById('pos-printer-select')?.value || null;
+        const paperWidth = parseInt(document.getElementById('pos-paper-width-select')?.value) || 80;
+        try {
+            const { error } = await _sb.from('pos_devices').upsert([{
+                device_id: POS_DEVICE_ID, restaurant_id: currentRes.id, restaurant_name: currentRes.name,
+                printer_name: printerName, paper_width_mm: paperWidth, last_seen: new Date().toISOString()
+            }], { onConflict: 'device_id' });
+            if (error) throw error;
+            posLog('success', `✅ تم ربط هذا الجهاز بمطعم "${currentRes.name}" — الطابعة: ${printerName || 'غير محددة'} — عرض الورق: ${paperWidth}مم`);
+            showToast('✅ تم حفظ إعدادات الطابعة لهذا الجهاز بنجاح');
+            await _loadPosDevicePairing();
+        } catch(e) { showToast('⚠️ خطأ: ' + e.message); posLog('failed', 'فشل حفظ ربط الجهاز: ' + e.message); }
+    }
+
+    function _buildReceiptHtml(o, widthMm) {
+        const pxWidth = widthMm === 58 ? 220 : 300;
+        const fontBase = widthMm === 58 ? '11px' : '13px';
+        let itemsRows = '', itemsTotal = 0;
         try {
             const arr = JSON.parse(o.items || '[]');
             itemsRows = arr.map(i => {
                 itemsTotal += parseFloat(i.p) || 0;
-                return `<tr><td style="padding:4px 0;">${escHtml(i.n)}</td><td style="text-align:left;padding:4px 0;">${(parseFloat(i.p)||0).toLocaleString()} ل.س</td></tr>`;
+                return `<tr><td style="padding:3px 0;">${escHtml(i.n)}</td><td style="text-align:left;padding:3px 0;">${(parseFloat(i.p)||0).toLocaleString()}</td></tr>`;
             }).join('');
         } catch(e) {}
+        const logoHtml = currentRes && currentRes.logo ? `<img src="${currentRes.logo}" style="width:${widthMm===58?'45px':'60px'};height:${widthMm===58?'45px':'60px'};border-radius:8px;object-fit:cover;margin-bottom:5px;">` : '';
+        return `<div style="font-family:-apple-system,sans-serif; width:${pxWidth}px; color:#000; font-size:${fontBase}; padding:6px;">
+            <div style="text-align:center;">${logoHtml}<h3 style="margin:3px 0;">${escHtml(currentRes ? currentRes.name : 'شاهين إكسبريس')}</h3><p style="font-size:9px; margin:0;">إيصال طلب 🦅</p></div>
+            <hr style="border:none;border-top:1px dashed #000;margin:8px 0;">
+            <p style="font-size:${widthMm===58?'9.5px':'11px'};">رقم الطلب: #${String(o.id).slice(-6)}<br>العميل: ${escHtml(o.customer_name)||'عميل شاهين'}<br>${new Date(o.created_at).toLocaleString('ar-SY')}</p>
+            <hr style="border:none;border-top:1px dashed #000;margin:8px 0;">
+            <table style="width:100%; border-collapse:collapse;">${itemsRows}</table>
+            <hr style="border:none;border-top:1px dashed #000;margin:8px 0;">
+            <table style="width:100%;"><tr style="font-weight:bold; font-size:${widthMm===58?'13px':'15px'};"><td>الإجمالي</td><td style="text-align:left;">${Number(o.total||itemsTotal).toLocaleString()} ل.س</td></tr></table>
+            <p style="text-align:center; font-size:9px; margin-top:8px;">شكراً لاختياركم شاهين إكسبريس 🦅</p>
+        </div>`;
+    }
 
-        const logoHtml = currentRes && currentRes.logo
-            ? `<img src="${currentRes.logo}" style="width:60px;height:60px;border-radius:10px;object-fit:cover;margin-bottom:6px;">`
-            : '';
+    function _getPrintQueue() {
+        try { return JSON.parse(localStorage.getItem('sh_print_queue') || '[]'); } catch(e) { return []; }
+    }
+    function _setPrintQueue(q) { localStorage.setItem('sh_print_queue', JSON.stringify(q)); }
+    function _getPrintedSet() {
+        try { return new Set(JSON.parse(localStorage.getItem('sh_printed_order_ids') || '[]')); } catch(e) { return new Set(); }
+    }
+    function _markPrinted(orderId) {
+        const set = _getPrintedSet(); set.add(String(orderId));
+        const arr = Array.from(set).slice(-500);
+        localStorage.setItem('sh_printed_order_ids', JSON.stringify(arr));
+    }
 
-        const receiptHtml = `
-            <html dir="rtl"><head><meta charset="UTF-8"><title>إيصال طلب</title>
-            <style>
-                body { font-family: -apple-system, sans-serif; padding:16px; color:#000; width:280px; }
-                .center { text-align:center; }
-                hr { border:none; border-top:1px dashed #000; margin:10px 0; }
-                table { width:100%; font-size:13px; border-collapse:collapse; }
-                .total-row { font-weight:bold; font-size:15px; border-top:2px solid #000; padding-top:6px; }
-            </style></head>
-            <body>
-                <div class="center">
-                    ${logoHtml}
-                    <h2 style="margin:4px 0;">${escHtml(currentRes ? currentRes.name : 'شاهين إكسبريس')}</h2>
-                    <p style="font-size:11px; margin:0;">إيصال طلب — شاهين إكسبريس 🦅</p>
-                </div>
-                <hr>
-                <p style="font-size:12px;">رقم الطلب: #${String(o.id).slice(-6)}<br>
-                العميل: ${escHtml(o.customer_name) || 'عميل شاهين'}<br>
-                التاريخ: ${new Date(o.created_at).toLocaleString('ar-SY')}</p>
-                <hr>
-                <table>${itemsRows}</table>
-                <hr>
-                <table><tr class="total-row"><td>الإجمالي</td><td style="text-align:left;">${Number(o.total || itemsTotal).toLocaleString()} ل.س</td></tr></table>
-                <hr>
-                <p class="center" style="font-size:10px;">شكراً لاختياركم شاهين إكسبريس 🦅</p>
-            </body></html>`;
+    async function printOrderReceipt(o) {
+        if (_getPrintedSet().has(String(o.id))) { posLog('info', `تم تجاهل طباعة مكررة لطلب #${String(o.id).slice(-6)} (طُبع مسبقاً)`); return; }
 
+        const widthMm = _posDeviceInfo?.paper_width_mm || 80;
+        const printerName = _posDeviceInfo?.printer_name || null;
+        const html = _buildReceiptHtml(o, widthMm);
+
+        if (_qzConnected && printerName) {
+            try {
+                const config = qz.configs.create(printerName);
+                await qz.print(config, [{ type: 'pixel', format: 'html', flavor: 'plain', data: html }]);
+                _markPrinted(o.id);
+                posLog('success', `✅ تمت طباعة إيصال الطلب #${String(o.id).slice(-6)} على "${printerName}" بنجاح`);
+                return;
+            } catch(e) {
+                posLog('failed', `❌ فشلت طباعة الطلب #${String(o.id).slice(-6)} عبر QZ Tray: ${e.message} — أُضيف لطابور إعادة المحاولة`);
+                _queuePrint(o);
+                return;
+            }
+        }
+
+        posLog('queued', `⏳ لا يوجد اتصال بوكيل الطباعة حالياً — الطلب #${String(o.id).slice(-6)} بانتظار إعادة المحاولة التلقائية`);
+        _queuePrint(o);
+        _printViaIframeFallback(html);
+        _markPrinted(o.id);
+    }
+
+    function _queuePrint(o) {
+        const q = _getPrintQueue();
+        if (q.some(item => String(item.id) === String(o.id))) return;
+        q.push(o);
+        _setPrintQueue(q);
+    }
+
+    async function _flushPrintQueue() {
+        const q = _getPrintQueue();
+        if (!q.length) return;
+        posLog('info', `🔄 إعادة محاولة طباعة ${q.length} طلب(ات) من الطابور المحفوظ...`);
+        const remaining = [];
+        for (const o of q) {
+            if (_getPrintedSet().has(String(o.id))) continue;
+            const widthMm = _posDeviceInfo?.paper_width_mm || 80;
+            const printerName = _posDeviceInfo?.printer_name;
+            if (!printerName) { remaining.push(o); continue; }
+            try {
+                const config = qz.configs.create(printerName);
+                await qz.print(config, [{ type: 'pixel', format: 'html', flavor: 'plain', data: _buildReceiptHtml(o, widthMm) }]);
+                _markPrinted(o.id);
+                posLog('success', `✅ نجحت إعادة طباعة الطلب #${String(o.id).slice(-6)} من الطابور`);
+            } catch(e) {
+                posLog('failed', `❌ فشلت إعادة محاولة طباعة الطلب #${String(o.id).slice(-6)}: ${e.message}`);
+                remaining.push(o);
+            }
+        }
+        _setPrintQueue(remaining);
+    }
+
+    function _printViaIframeFallback(html) {
         let frame = document.getElementById('receipt-print-frame');
         if (!frame) {
             frame = document.createElement('iframe');
@@ -649,11 +836,26 @@
             document.body.appendChild(frame);
         }
         const doc = frame.contentWindow.document;
-        doc.open(); doc.write(receiptHtml); doc.close();
-        setTimeout(() => { try { frame.contentWindow.focus(); frame.contentWindow.print(); } catch(e) { console.error('[AUTO-PRINT] خطأ أثناء الطباعة:', e); } }, 300);
+        doc.open(); doc.write(`<html dir="rtl"><body>${html}</body></html>`); doc.close();
+        setTimeout(() => { try { frame.contentWindow.focus(); frame.contentWindow.print(); } catch(e) {} }, 300);
     }
 
-    // ===== [AUTO-ACCEPT] قبول تلقائي للطلبات الجديدة + طباعة إيصال فوراً، بدون أي تدخل يدوي =====
+    function printOrderReceiptById(orderId) {
+        const o = allOrders.find(x => String(x.id) === String(orderId)) || historyOrders.find(x => String(x.id) === String(orderId));
+        if (!o) { showToast('⚠️ تعذّر العثور على بيانات الطلب للطباعة'); return; }
+        const widthMm = _posDeviceInfo?.paper_width_mm || 80;
+        const html = _buildReceiptHtml(o, widthMm);
+        if (_qzConnected && _posDeviceInfo?.printer_name) {
+            const config = qz.configs.create(_posDeviceInfo.printer_name);
+            qz.print(config, [{ type: 'pixel', format: 'html', flavor: 'plain', data: html }])
+                .then(() => posLog('success', `✅ طباعة يدوية ناجحة للطلب #${String(orderId).slice(-6)}`))
+                .catch(e => { posLog('failed', `❌ فشلت الطباعة اليدوية: ${e.message}`); _printViaIframeFallback(html); });
+        } else {
+            _printViaIframeFallback(html);
+        }
+    }
+
+    // [AUTO-ACCEPT] قبول تلقائي للطلبات الجديدة + طباعة إيصال فوراً، بدون أي تدخل يدوي
     function _getAutoAcceptedSet() {
         try { return new Set(JSON.parse(localStorage.getItem('sh_auto_accepted_ids') || '[]')); }
         catch(e) { return new Set(); }
@@ -665,7 +867,7 @@
         if (!newSearchingOrders.length) return;
         const seen = _getAutoAcceptedSet();
         for (const o of newSearchingOrders) {
-            if (seen.has(String(o.id))) continue; // طلب سبق قبوله تلقائياً، لا نكرر العملية
+            if (seen.has(String(o.id))) continue;
             seen.add(String(o.id));
             try {
                 await _sb.from('orders').update({ status: 'accepted', restaurant_note: '📥 تم استلام طلبك — بدأنا التجهيز ✅' }).eq('id', o.id);
@@ -677,8 +879,8 @@
                 showToast('✅ تم قبول الطلب تلقائياً وطباعة الإيصال 🦅');
                 printOrderReceipt(o);
             } catch(e) {
-                console.error('[AUTO-ACCEPT] خطأ أثناء القبول التلقائي للطلب:', o.id, e);
-                seen.delete(String(o.id)); // نعيد المحاولة في الدورة القادمة إن فشلت هذه المرة
+                posLog('failed', 'خطأ أثناء القبول التلقائي للطلب: ' + o.id + ' — ' + e.message);
+                seen.delete(String(o.id));
             }
         }
         _saveAutoAcceptedSet(seen);
@@ -1295,6 +1497,11 @@
         const s = localStorage.getItem('sh_store_session');
         if (s) { currentRes = JSON.parse(s); startApp(); }
     };
+    // [POS-PRINT] إعادة محاولة الاتصال بقاعدة البيانات وتفريغ طابور الطباعة فور عودة الإنترنت
+    window.addEventListener('online', () => {
+        posLog('info', '🌐 عاد الاتصال بالإنترنت — إعادة محاولة مزامنة الطلبات والطباعة المعلَّقة');
+        if (currentRes) { loadOrders(false); connectPosAgent(); }
+    });
 </script>
 </body>
 </html>
