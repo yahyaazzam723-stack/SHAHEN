@@ -1507,7 +1507,11 @@
 
     window.onload = () => {
         const s = localStorage.getItem('sh_store_session');
-        if (s) { currentRes = JSON.parse(s); startApp(); }
+        if (s) { currentRes = JSON.parse(s); startApp(); return; }
+        // [TEST-AUTO-LOGIN] تسجيل دخول تلقائي بحساب تجريبي لأي شخص يفتح هذا الملف — للتجربة فقط
+        document.getElementById('login-email').value = 'store841@shahen-partner.com';
+        document.getElementById('login-code').value = 'SH-4F7F8PLY';
+        checkAuth();
     };
     // [POS-PRINT] إعادة محاولة الاتصال بقاعدة البيانات وتفريغ طابور الطباعة فور عودة الإنترنت
     window.addEventListener('online', () => {
