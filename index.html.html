@@ -182,6 +182,12 @@
         <input class="inp" type="email" id="login-email" placeholder="البريد الإلكتروني">
         <input class="inp" type="password" id="login-code" placeholder="كود التفعيل">
         <button class="btn-login" onclick="checkAuth()"><i class="fas fa-sign-in-alt"></i> دخول</button>
+        <!-- ===== [FIX-WEBVIEW-LOGIN] سجل تشخيص ظاهر مباشرة على الجهاز — يفيد عند التشغيل داخل تطبيق
+             أندرويد (WebView) حيث لا تتوفر أدوات مطوّر سطح المكتب لرؤية الأخطاء ===== -->
+        <details style="margin-top:14px; text-align:right;">
+            <summary style="font-size:10px; color:#888; cursor:pointer;">🔧 سجل التشخيص (اضغط هنا عند وجود مشكلة)</summary>
+            <pre id="sh-debug-panel" style="background:rgba(0,0,0,0.4); color:#0f0; font-size:9px; padding:8px; border-radius:6px; max-height:140px; overflow-y:auto; white-space:pre-wrap; direction:ltr; text-align:left; margin-top:6px;">جاري التحميل...</pre>
+        </details>
     </div>
 </div>
 
@@ -396,10 +402,38 @@
 </div>
 
 <script>
-    const _sb = supabase.createClient(
-        'https://ricoslplbhphydhtrufe.supabase.co',
-        'sb_publishable_k6LgEuwPLdCsBMCFC12wfQ_BSOJotuw'
-    );
+    // [FIX-WEBVIEW-LOGIN] هذا يجب أن يكون أول شيء يُنفَّذ في الصفحة بالكامل — قبل أي كود آخر — لضمان
+    // التقاط أي خطأ يحدث لاحقاً، بما في ذلك أخطاء تهيئة Supabase نفسها
+    window._shDebugLogs = [];
+    function debugLog(type, msg) {
+        const entry = `[${new Date().toLocaleTimeString('ar-SY')}] [${type}] ${msg}`;
+        window._shDebugLogs.push(entry);
+        if (window._shDebugLogs.length > 100) window._shDebugLogs.shift();
+        if (type === 'error') console.error('[SH-DEBUG]', msg); else console.log('[SH-DEBUG]', msg);
+        try {
+            const panel = document.getElementById('sh-debug-panel');
+            if (panel) panel.innerText = window._shDebugLogs.slice(-25).join('\n');
+        } catch(e) {}
+    }
+    window.addEventListener('error', (e) => {
+        debugLog('error', `❌ خطأ JS غير متوقع: ${e.message} — في: ${e.filename}:${e.lineno}`);
+    });
+    window.addEventListener('unhandledrejection', (e) => {
+        debugLog('error', `❌ خطأ Promise غير معالَج: ${e.reason}`);
+    });
+    debugLog('info', '🟢 بدأ تنفيذ سكربت الصفحة بنجاح');
+
+    let _sb;
+    try {
+        if (typeof supabase === 'undefined') throw new Error('مكتبة Supabase لم تُحمَّل — تحقق من اتصال الإنترنت أو من حظر WebView لروابط CDN الخارجية');
+        _sb = supabase.createClient(
+            'https://ricoslplbhphydhtrufe.supabase.co',
+            'sb_publishable_k6LgEuwPLdCsBMCFC12wfQ_BSOJotuw'
+        );
+        debugLog('info', '✅ تم تهيئة Supabase client بنجاح');
+    } catch(_sbInitErr) {
+        debugLog('error', '🔥 فشلت تهيئة Supabase بالكامل: ' + _sbInitErr.message);
+    }
 
     let currentRes = null, allOrders = [], historyOrders = [], refreshTimer = 0;
     let activeOrderId = null, chatChannel = null, statusChannel = null;
@@ -461,47 +495,83 @@
     // ===== تسجيل الدخول =====
     // [SEC-FIX-2] Brute Force: حماية تسجيل الدخول من المحاولات المتعددة
     // [SEC-PATCH-11] استمرارية القفل عبر إعادة التحميل باستخدام sessionStorage
-    let _loginAttempts = parseInt(sessionStorage.getItem('_res_attempts') || '0'), _loginLockUntil = parseInt(sessionStorage.getItem('_res_lock_until') || '0');
+    // [FIX-WEBVIEW-LOGIN] حماية حرجة: هذا السطر كان بلا أي حماية وينفَّذ فوراً عند تحميل الصفحة (قبل
+    // تعريف أي دالة أخرى بما فيها زر تسجيل الدخول نفسه). بعض أغلفة WebView في تطبيقات أندرويد تمنع أو
+    // تُقيّد الوصول لـ sessionStorage (خصوصاً عند تحميل الصفحة من مخطط غير قياسي)، فيرمي الوصول إليها
+    // استثناءً (SecurityError) يوقف تنفيذ كامل الكود البرمجي في الصفحة فوراً — وهذا يفسّر بدقة العطل
+    // المُكتشف: الزر "موجود" بصرياً (HTML سابق للسكربت) لكن onclick لم يُعرَّف أبداً لأن السكربت توقف هنا
+    let _loginAttempts = 0, _loginLockUntil = 0;
+    try {
+        _loginAttempts = parseInt(sessionStorage.getItem('_res_attempts') || '0');
+        _loginLockUntil = parseInt(sessionStorage.getItem('_res_lock_until') || '0');
+        debugLog('info', 'sessionStorage متاح ويعمل بنجاح ✅');
+    } catch(_storageErr) {
+        debugLog('error', '⚠️ sessionStorage غير متاح في هذا WebView — تم تجاوز الخطأ والاستمرار بقيم افتراضية: ' + _storageErr.message);
+    }
+
     async function checkAuth() {
-        const now = Date.now();
-        if (now < _loginLockUntil) {
-            const secs = Math.ceil((_loginLockUntil - now) / 1000);
-            showToast('⛔ محظور مؤقتاً. انتظر ' + secs + ' ثانية');
-            return;
-        }
-        const email = document.getElementById('login-email').value.trim().toLowerCase();
-        const code  = document.getElementById('login-code').value.trim();
-        if (!email || !code) { showToast('يرجى إدخال البريد والكود ❌'); return; }
-        // [FIX] البحث بالإيميل فقط أولاً ثم مقارنة الكود يدوياً لتفادي حساسية الحروف
-        const { data: rowData, error: rowError } = await _sb.from('restaurants').select('*').ilike('email', email).maybeSingle();
-        // [SEC-PATCH-21] إزالة console.log الذي كان يطبع الإيميل وبيانات الدخول في بيئة الإنتاج
-        const data = rowData && (String(rowData.access_code).trim() === String(code).trim()) ? rowData : null;
-        if (data) {
-            _loginAttempts = 0; // إعادة العداد عند النجاح
-            sessionStorage.removeItem('_res_attempts');
-            sessionStorage.removeItem('_res_lock_until');
-            currentRes = data;
-            // ===== توليد اسم مستخدم تلقائي إذا لم يكن موجوداً =====
-            if (!currentRes.auto_username) {
-                const autoUser = generateAutoUsername('RES');
-                try { await _sb.from('restaurants').update({ auto_username: autoUser }).eq('id', currentRes.id); } catch(e) {}
-                currentRes.auto_username = autoUser;
+        debugLog('info', '👆 تم الضغط على زر تسجيل الدخول — بدء التنفيذ'); // [FIX-WEBVIEW-LOGIN] تأكيد فعلي أن onclick يصل لهذه الدالة
+        try {
+            const now = Date.now();
+            if (now < _loginLockUntil) {
+                const secs = Math.ceil((_loginLockUntil - now) / 1000);
+                showToast('⛔ محظور مؤقتاً. انتظر ' + secs + ' ثانية');
+                debugLog('info', `محظور مؤقتاً، متبقٍ ${secs} ثانية`);
+                return;
             }
-            // ===== نهاية توليد اسم المستخدم =====
-            // [SEC-PATCH-27] إضافة timestamp للجلسة للتحقق من الصلاحية (24 ساعة)
-            const _sessionData39 = Object.assign({}, data, { _ts: Date.now() });
-            localStorage.setItem('sh_store_session', JSON.stringify(_sessionData39));
-            startApp();
-        } else {
-            _loginAttempts++;
-            sessionStorage.setItem('_res_attempts', _loginAttempts);
-            if (_loginAttempts >= 5) {
-                _loginLockUntil = Date.now() + 60000;
-                sessionStorage.setItem('_res_lock_until', _loginLockUntil);
+            const emailEl = document.getElementById('login-email');
+            const codeEl = document.getElementById('login-code');
+            if (!emailEl || !codeEl) { debugLog('error', '❌ لم يُعثر على حقول الإيميل/الكود في الصفحة! تحقق من بنية HTML'); return; }
+            const email = emailEl.value.trim().toLowerCase();
+            const code  = codeEl.value.trim();
+            if (!email || !code) { showToast('يرجى إدخال البريد والكود ❌'); debugLog('info', 'إيميل أو كود فاضي، توقفت العملية'); return; }
+
+            debugLog('info', `📡 جاري الاتصال بـ Supabase للبحث عن: ${email}`);
+            const { data: rowData, error: rowError } = await _sb.from('restaurants').select('*').ilike('email', email).maybeSingle();
+            if (rowError) { debugLog('error', '❌ خطأ من Supabase أثناء البحث: ' + rowError.message); showToast('⚠️ تعذّر الاتصال بالخادم، تحقق من الإنترنت'); return; }
+            debugLog('info', rowData ? '✅ وُجد مطعم مطابق للإيميل' : '⚠️ لا يوجد مطعم بهذا الإيميل');
+
+            const data = rowData && (String(rowData.access_code).trim() === String(code).trim()) ? rowData : null;
+            if (data) {
+                debugLog('info', '✅ الكود صحيح — تسجيل الدخول ناجح، جاري بدء التطبيق');
                 _loginAttempts = 0;
-                sessionStorage.setItem('_res_attempts', '0');
+                try { sessionStorage.removeItem('_res_attempts'); sessionStorage.removeItem('_res_lock_until'); } catch(e) { debugLog('error', 'تعذّر مسح sessionStorage (غير حرج): ' + e.message); }
+                currentRes = data;
+                if (!currentRes.auto_username) {
+                    const autoUser = generateAutoUsername('RES');
+                    try { await _sb.from('restaurants').update({ auto_username: autoUser }).eq('id', currentRes.id); } catch(e) {}
+                    currentRes.auto_username = autoUser;
+                }
+                const _sessionData39 = Object.assign({}, data, { _ts: Date.now() });
+                try {
+                    localStorage.setItem('sh_store_session', JSON.stringify(_sessionData39));
+                    debugLog('info', '✅ تم حفظ الجلسة في localStorage بنجاح');
+                } catch(e) {
+                    // [FIX-WEBVIEW-LOGIN] إن تعذّر حفظ الجلسة (localStorage مقيَّد)، نستمر بالجلسة في
+                    // الذاكرة فقط للسماح بالعمل بالجلسة الحالية حتى لو لن تُحفظ بعد إغلاق التطبيق
+                    debugLog('error', '⚠️ تعذّر حفظ الجلسة في localStorage: ' + e.message + ' — سيعمل التطبيق بالجلسة الحالية فقط دون حفظها');
+                }
+                startApp();
+                debugLog('info', '🚀 تم استدعاء startApp() — يجب أن تظهر الصفحة الرئيسية الآن');
+            } else {
+                debugLog('info', '❌ بيانات الدخول غير صحيحة');
+                _loginAttempts++;
+                try {
+                    sessionStorage.setItem('_res_attempts', _loginAttempts);
+                    if (_loginAttempts >= 5) {
+                        _loginLockUntil = Date.now() + 60000;
+                        sessionStorage.setItem('_res_lock_until', _loginLockUntil);
+                        _loginAttempts = 0;
+                        sessionStorage.setItem('_res_attempts', '0');
+                    }
+                } catch(e) { debugLog('error', 'تعذّر تحديث عداد المحاولات (غير حرج): ' + e.message); }
+                showToast('بيانات الدخول غير صحيحة ❌');
             }
-            showToast('بيانات الدخول غير صحيحة ❌');
+        } catch(_fatalErr) {
+            // [FIX-WEBVIEW-LOGIN] الحماية الأهم: أي استثناء غير متوقع في أي مكان من هذه الدالة كان
+            // سابقاً يوقف العملية بصمت تماماً بدون أي أثر — الآن يظهر بوضوح دائماً
+            debugLog('error', '🔥 خطأ غير متوقع توقفت بسببه عملية تسجيل الدخول: ' + (_fatalErr.message || _fatalErr));
+            showToast('⚠️ حدث خطأ غير متوقع، افتح سجل التشخيص بالأسفل لمعرفة السبب');
         }
     }
 
@@ -1506,8 +1576,10 @@
     }
 
     window.onload = () => {
-        const s = localStorage.getItem('sh_store_session');
-        if (s) { currentRes = JSON.parse(s); startApp(); return; }
+        debugLog('info', '📄 window.onload نُفِّذ — الصفحة جاهزة بالكامل');
+        let s = null;
+        try { s = localStorage.getItem('sh_store_session'); } catch(e) { debugLog('error', 'تعذّر قراءة localStorage: ' + e.message); }
+        if (s) { try { currentRes = JSON.parse(s); startApp(); return; } catch(e) { debugLog('error', 'جلسة محفوظة تالفة، تم تجاهلها: ' + e.message); } }
         // [TEST-AUTO-LOGIN] تسجيل دخول تلقائي بحساب تجريبي لأي شخص يفتح هذا الملف — للتجربة فقط
         document.getElementById('login-email').value = 'store841@shahen-partner.com';
         document.getElementById('login-code').value = 'SH-4F7F8PLY';
