@@ -933,10 +933,22 @@
         });
         allOrders = _filtered;
 
-        // [AUTO-ACCEPT] قبول فوري تلقائي لكل طلب جديد بحالة "searching" + طباعة إيصال — بدون أي تدخل يدوي
+        // [AUTO-ACCEPT] قبول فوري تلقائي لكل طلب جديد بحالة "searching" (للمطاعم الشريكة التي تستقبل
+        // الطلب قبل المندوب) — بدون أي تدخل يدوي
         const _newSearchingOrders = _filtered.filter(o => o.status === 'searching');
         if (_newSearchingOrders.length > 0) {
             _autoAcceptNewOrders(_newSearchingOrders).then(() => loadOrders(false));
+        }
+
+        // [FIX-AUTO-PRINT-ANY-STATUS] طباعة فورية لأي طلب يظهر لأول مرة في هذه القائمة، بصرف النظر عن
+        // حالته — يضمن الطباعة التلقائية حتى للمطاعم غير الشريكة التي لا ترى الطلب إلا بعد قبول
+        // المندوب له مباشرة (أي لا تمر بحالة "searching" إطلاقاً من منظور هذا المطعم)
+        const _everSeen = (() => { try { return new Set(JSON.parse(localStorage.getItem('sh_ever_seen_order_ids') || '[]')); } catch(e) { return new Set(); } })();
+        const _freshOrders = _filtered.filter(o => !_everSeen.has(String(o.id)) && o.status !== 'consulting' && o.status !== 'pending_store');
+        if (_freshOrders.length > 0) {
+            _freshOrders.forEach(o => { _everSeen.add(String(o.id)); printOrderReceipt(o); });
+            const _trimmed = Array.from(_everSeen).slice(-500);
+            localStorage.setItem('sh_ever_seen_order_ids', JSON.stringify(_trimmed));
         }
 
         const newCount = allOrders.length;
