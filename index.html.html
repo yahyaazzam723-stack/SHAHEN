@@ -1022,30 +1022,73 @@ window.createMinimalSupabaseClient = createMinimalSupabaseClient;
     }
 
     async function printOrderReceipt(o) {
-        if (_getPrintedSet().has(String(o.id))) { posLog('info', `تم تجاهل طباعة مكررة لطلب #${String(o.id).slice(-6)} (طُبع مسبقاً)`); return; }
+        // [FIX-PRINT-STATUS-DB] فحص حالة الطباعة من قاعدة البيانات أولاً، لا من الجهاز فقط — هذا يضمن
+        // عدم التكرار حتى لو أُعيد تثبيت التطبيق أو مُسحت بيانات المتصفح بالكامل على هذا الجهاز
+        try {
+            const { data: freshOrder } = await _sb.from('sh_public_orders').select('print_status').eq('id', o.id).maybeSingle();
+            if (freshOrder && freshOrder.print_status === 'printed') {
+                posLog('info', `تم تجاهل طباعة مكررة لطلب #${String(o.id).slice(-6)} (مُسجَّل "مطبوع" في قاعدة البيانات)`);
+                _markPrinted(o.id);
+                return;
+            }
+        } catch(e) { posLog('failed', 'خطأ أثناء فحص حالة الطباعة من القاعدة: ' + e.message); }
 
-        const widthMm = (_posDeviceInfo && _posDeviceInfo.paper_width_mm) || 80;
+        if (_getPrintedSet().has(String(o.id))) { posLog('info', `تم تجاهل طباعة مكررة لطلب #${String(o.id).slice(-6)} (طُبع مسبقاً على هذا الجهاز)`); return; }
+
+        const widthMm = (_posDeviceInfo && _posDeviceInfo.paper_width_mm) || 58;
         const printerName = (_posDeviceInfo && _posDeviceInfo.printer_name) || null;
         const html = _buildReceiptHtml(o, widthMm);
 
         if (_qzConnected && printerName) {
             try {
                 const config = qz.configs.create(printerName);
-                await qz.print(config, [{ type: 'pixel', format: 'html', flavor: 'plain', data: html }]);
+                // [FIX-PAPER-CUT] أمر قص الورق الخام (ESC/POS) يُرسَل بعد محتوى الإيصال مباشرة، إن كانت
+                // الطابعة تدعمه — أمر GS V 0 هو أمر القص الكامل القياسي المعتمَد في أغلب الطابعات الحرارية
+                await qz.print(config, [
+                    { type: 'pixel', format: 'html', flavor: 'plain', data: html },
+                    { type: 'raw', format: 'command', data: '\x1D\x56\x00' }
+                ]);
                 _markPrinted(o.id);
+                _setOrderPrintStatus(o.id, 'printed', null);
                 posLog('success', `✅ تمت طباعة إيصال الطلب #${String(o.id).slice(-6)} على "${printerName}" بنجاح`);
                 return;
             } catch(e) {
                 posLog('failed', `❌ فشلت طباعة الطلب #${String(o.id).slice(-6)} عبر QZ Tray: ${e.message} — أُضيف لطابور إعادة المحاولة`);
+                _setOrderPrintStatus(o.id, 'failed', e.message);
                 _queuePrint(o);
+                _showPrintFailureBanner(o, e.message);
                 return;
             }
         }
 
         posLog('queued', `⏳ لا يوجد اتصال بوكيل الطباعة حالياً — الطلب #${String(o.id).slice(-6)} بانتظار إعادة المحاولة التلقائية`);
+        _setOrderPrintStatus(o.id, 'pending', 'الطابعة غير متصلة حالياً');
         _queuePrint(o);
+        _showPrintFailureBanner(o, 'الطابعة الحرارية غير متصلة حالياً');
         _printViaIframeFallback(html);
-        _markPrinted(o.id);
+    }
+
+    // [FIX-PRINT-STATUS-DB] تحديث حالة الطباعة في قاعدة البيانات — مرئية لأي جهاز/متصفح آخر يفتح نفس الطلب
+    async function _setOrderPrintStatus(orderId, status, failReason) {
+        try {
+            const payload = { print_status: status, print_fail_reason: failReason || null };
+            if (status === 'printed') payload.printed_at = new Date().toISOString();
+            await _sb.from('sh_public_orders').update(payload).eq('id', orderId);
+        } catch(e) { posLog('failed', 'تعذّر تحديث حالة الطباعة في القاعدة: ' + e.message); }
+    }
+
+    // [FIX-PRINT-FAILURE-UI] شريط تنبيه واضح وظاهر عند فشل الطباعة، مع زر إعادة المحاولة الفورية
+    function _showPrintFailureBanner(o, reason) {
+        let banner = document.getElementById('print-failure-banner');
+        if (!banner) {
+            banner = document.createElement('div');
+            banner.id = 'print-failure-banner';
+            banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:999999;background:#7a0000;color:#fff;padding:12px 16px;font-size:13px;text-align:center;box-shadow:0 2px 10px rgba(0,0,0,0.5);';
+            document.body.insertBefore(banner, document.body.firstChild);
+        }
+        banner.innerHTML = '⚠️ فشلت طباعة الطلب #' + String(o.id).slice(-6) + ' — ' + reason +
+            ' <button onclick="printOrderReceiptById(\'' + o.id + '\'); document.getElementById(\'print-failure-banner\').remove();" style="background:#fff;color:#7a0000;border:none;padding:6px 14px;border-radius:8px;font-weight:bold;margin-right:8px;cursor:pointer;">إعادة الطباعة</button>' +
+            ' <button onclick="document.getElementById(\'print-failure-banner\').remove();" style="background:transparent;border:1px solid #fff;color:#fff;padding:6px 10px;border-radius:8px;cursor:pointer;">إغلاق</button>';
     }
 
     function _queuePrint(o) {
@@ -1059,23 +1102,13 @@ window.createMinimalSupabaseClient = createMinimalSupabaseClient;
         const q = _getPrintQueue();
         if (!q.length) return;
         posLog('info', `🔄 إعادة محاولة طباعة ${q.length} طلب(ات) من الطابور المحفوظ...`);
-        const remaining = [];
+        _setPrintQueue([]); // نُفرِّغ الطابور أولاً، وكل طلب يُعاد إدراجه في الطابور تلقائياً من جديد إن فشل
         for (const o of q) {
             if (_getPrintedSet().has(String(o.id))) continue;
-            const widthMm = (_posDeviceInfo && _posDeviceInfo.paper_width_mm) || 80;
-            const printerName = (_posDeviceInfo && _posDeviceInfo.printer_name);
-            if (!printerName) { remaining.push(o); continue; }
-            try {
-                const config = qz.configs.create(printerName);
-                await qz.print(config, [{ type: 'pixel', format: 'html', flavor: 'plain', data: _buildReceiptHtml(o, widthMm) }]);
-                _markPrinted(o.id);
-                posLog('success', `✅ نجحت إعادة طباعة الطلب #${String(o.id).slice(-6)} من الطابور`);
-            } catch(e) {
-                posLog('failed', `❌ فشلت إعادة محاولة طباعة الطلب #${String(o.id).slice(-6)}: ${e.message}`);
-                remaining.push(o);
-            }
+            // [FIX-PRINT-CONSISTENCY] إعادة استخدام نفس دالة الطباعة الأساسية بالضبط — تضمن نفس فحص
+            // حالة قاعدة البيانات، نفس أمر القص، ونفس شريط التنبيه عند الفشل، بدون أي تكرار للمنطق
+            await printOrderReceipt(o);
         }
-        _setPrintQueue(remaining);
     }
 
     function _printViaIframeFallback(html) {
@@ -1094,12 +1127,15 @@ window.createMinimalSupabaseClient = createMinimalSupabaseClient;
     function printOrderReceiptById(orderId) {
         const o = allOrders.find(x => String(x.id) === String(orderId)) || historyOrders.find(x => String(x.id) === String(orderId));
         if (!o) { showToast('⚠️ تعذّر العثور على بيانات الطلب للطباعة'); return; }
-        const widthMm = (_posDeviceInfo && _posDeviceInfo.paper_width_mm) || 80;
+        const widthMm = (_posDeviceInfo && _posDeviceInfo.paper_width_mm) || 58;
         const html = _buildReceiptHtml(o, widthMm);
         if (_qzConnected && _posDeviceInfo && _posDeviceInfo.printer_name) {
             const config = qz.configs.create(_posDeviceInfo.printer_name);
-            qz.print(config, [{ type: 'pixel', format: 'html', flavor: 'plain', data: html }])
-                .then(() => posLog('success', `✅ طباعة يدوية ناجحة للطلب #${String(orderId).slice(-6)}`))
+            qz.print(config, [
+                { type: 'pixel', format: 'html', flavor: 'plain', data: html },
+                { type: 'raw', format: 'command', data: '\x1D\x56\x00' }
+            ])
+                .then(() => { posLog('success', `✅ طباعة يدوية ناجحة للطلب #${String(orderId).slice(-6)}`); _setOrderPrintStatus(orderId, 'printed', null); })
                 .catch(e => { posLog('failed', `❌ فشلت الطباعة اليدوية: ${e.message}`); _printViaIframeFallback(html); });
         } else {
             _printViaIframeFallback(html);
