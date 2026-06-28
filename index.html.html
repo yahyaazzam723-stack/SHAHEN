@@ -164,38 +164,12 @@
 
         @keyframes pulse { 0%{opacity:.8} 50%{opacity:1} 100%{opacity:.8} }
         .pulse { animation: pulse 2s infinite; }
-
-        /* ===== إيصال الطباعة التلقائية ===== */
-        #print-receipt { display: none; }
-        @media print {
-            @page { size: 58mm auto; margin: 0; }
-            body * { visibility: hidden !important; }
-            #print-receipt, #print-receipt * { visibility: visible !important; }
-            #print-receipt {
-                display: block !important;
-                position: absolute; top: 0; left: 0;
-                width: 48mm; max-width: 48mm;
-                background: #fff; color: #000; padding: 2mm 1mm; font-family: -apple-system, sans-serif;
-                direction: rtl;
-            }
-            .pr-logo { display: block; width: 22mm; margin: 0 auto 1.5mm; }
-            .pr-name { text-align: center; font-size: 13px; font-weight: bold; margin-bottom: 1px; word-break: break-word; }
-            .pr-sub  { text-align: center; font-size: 10px; margin-bottom: 2mm; }
-            .pr-divider { border-top: 1px dashed #000; margin: 2mm 0; }
-            .pr-meta div { font-size: 10px; margin-bottom: 1mm; word-break: break-word; }
-            .pr-item-row { display: flex; justify-content: space-between; gap: 2mm; font-size: 11px; margin-bottom: 1.5mm; }
-            .pr-item-row span:first-child { flex: 1; word-break: break-word; }
-            .pr-item-row span:last-child { white-space: nowrap; }
-            .pr-total { text-align: center; font-size: 12px; font-weight: bold; margin-top: 2mm; }
-            .pr-footer { text-align: center; font-size: 9px; margin-top: 2mm; word-break: break-word; }
-        }
     </style>
 </head>
 <body onclick="initAudio()">
 
 <div class="sync-bar" id="sync-bar"></div>
 <div id="toast"></div>
-<div id="print-receipt"></div>
 
 <!-- ===== شاشة الدخول ===== -->
 <div id="auth-screen" class="auth-overlay">
@@ -376,34 +350,12 @@
             </label>
         </div>
 
-        <div class="settings-row">
-            <div class="settings-label">
-                ⚡ قبول الطلبات تلقائياً
-                <small>قبول كل طلب جديد فوراً دون الحاجة لضغط زر "تم استلام الطلب"</small>
-            </div>
-            <label class="toggle-switch">
-                <input type="checkbox" id="toggle-auto-accept" checked onchange="saveLocalSetting('auto_accept_enabled', this.checked)">
-                <span class="toggle-slider"></span>
-            </label>
-        </div>
-
-        <div class="settings-row">
-            <div class="settings-label">
-                🖨️ طباعة الإيصال تلقائياً
-                <small>طباعة إيصال يحوي الشعار واسم المتجر ومعلومات الطلب فور وصوله</small>
-            </div>
-            <label class="toggle-switch">
-                <input type="checkbox" id="toggle-auto-print" checked onchange="saveLocalSetting('auto_print_enabled', this.checked)">
-                <span class="toggle-slider"></span>
-            </label>
-        </div>
-
         <div style="background:rgba(212,175,55,0.06); border:1px solid rgba(212,175,55,0.25); border-radius:14px; padding:15px; margin-top:10px;">
             <p style="font-size:12px; color:var(--gold); font-weight:bold; margin:0 0 8px;"><i class="fas fa-info-circle"></i> ملاحظة</p>
             <p style="font-size:11px; opacity:0.7; margin:0; line-height:1.7;">
                 ⚠️ التواصل المباشر يُتحكم به من لوحة الإدارة فقط — لا يمكن تعديله من هنا.<br>
                 ⚠️ تجهيز الطلبات وتعديل المنيو يتحكم بها الإدارة أيضاً.<br>
-                🔔 صوت الإشعارات، وقبول الطلبات تلقائياً، وطباعة الإيصال تلقائياً — يمكن التحكم بها من هذا الجهاز فقط.
+                🔔 صوت الإشعارات فقط يمكن تغييره من الجهاز.
             </p>
         </div>
 
@@ -423,8 +375,6 @@
     let activeOrderId = null, chatChannel = null, statusChannel = null;
     let msgIds = new Set(), _archivedOrderIds = new Set(), _msgPollInterval = null;
     let _lastOrderCount = 0;
-    let _autoProcessedIds = new Set(); // ===== [AUTO-39] منع معالجة الطلب الجديد أكثر من مرة =====
-    let _printedOrderIds = new Set((() => { try { return JSON.parse(localStorage.getItem('sh_printed_orders') || '[]'); } catch (e) { return []; } })()); // ===== [AUTO-39] تذكّر الطلبات المطبوعة سابقاً عبر إعادة تحميل الصفحة =====
     // ===== صوتان منفصلان: صوت الطلبات وصوت التواصل/الرسائل =====
     const sound = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
     const chatSound = new Audio('https://assets.mixkit.co/active_storage/sfx/1862/1862-preview.mp3');
@@ -469,14 +419,6 @@
     function getSoundEnabled() {
         return getLocalSetting('sound_enabled', true);
     }
-    // ===== [AUTO-39] إعدادات القبول التلقائي والطباعة التلقائية =====
-    function getAutoAcceptEnabled() {
-        return getLocalSetting('auto_accept_enabled', true);
-    }
-    function getAutoPrintEnabled() {
-        return getLocalSetting('auto_print_enabled', true);
-    }
-    // ===== نهاية [AUTO-39] =====
 
     // ===== توليد اسم مستخدم تلقائي فريد =====
     function generateAutoUsername(prefix) {
@@ -631,12 +573,6 @@
         if (toggleChat) { toggleChat.checked = dbDirectContact; toggleChat.disabled = true; }
         const toggleSound = document.getElementById('toggle-sound');
         if (toggleSound) toggleSound.checked = getSoundEnabled();
-        // ===== [AUTO-39] مزامنة مفاتيح القبول والطباعة التلقائية =====
-        const toggleAutoAccept = document.getElementById('toggle-auto-accept');
-        if (toggleAutoAccept) toggleAutoAccept.checked = getAutoAcceptEnabled();
-        const toggleAutoPrint = document.getElementById('toggle-auto-print');
-        if (toggleAutoPrint) toggleAutoPrint.checked = getAutoPrintEnabled();
-        // ===== نهاية [AUTO-39] =====
     }
 
     // ===== تبديل الصفحات =====
@@ -655,6 +591,92 @@
     }
 
     // ===== جلب الطلبات =====
+    // ===== [AUTO-ACCEPT-PRINT] طباعة إيصال تلقائية بشعار المطعم عند قبول الطلب =====
+    function printOrderReceipt(o) {
+        let itemsRows = '';
+        let itemsTotal = 0;
+        try {
+            const arr = JSON.parse(o.items || '[]');
+            itemsRows = arr.map(i => {
+                itemsTotal += parseFloat(i.p) || 0;
+                return `<tr><td style="padding:4px 0;">${escHtml(i.n)}</td><td style="text-align:left;padding:4px 0;">${(parseFloat(i.p)||0).toLocaleString()} ل.س</td></tr>`;
+            }).join('');
+        } catch(e) {}
+
+        const logoHtml = currentRes && currentRes.logo
+            ? `<img src="${currentRes.logo}" style="width:60px;height:60px;border-radius:10px;object-fit:cover;margin-bottom:6px;">`
+            : '';
+
+        const receiptHtml = `
+            <html dir="rtl"><head><meta charset="UTF-8"><title>إيصال طلب</title>
+            <style>
+                body { font-family: -apple-system, sans-serif; padding:16px; color:#000; width:280px; }
+                .center { text-align:center; }
+                hr { border:none; border-top:1px dashed #000; margin:10px 0; }
+                table { width:100%; font-size:13px; border-collapse:collapse; }
+                .total-row { font-weight:bold; font-size:15px; border-top:2px solid #000; padding-top:6px; }
+            </style></head>
+            <body>
+                <div class="center">
+                    ${logoHtml}
+                    <h2 style="margin:4px 0;">${escHtml(currentRes ? currentRes.name : 'شاهين إكسبريس')}</h2>
+                    <p style="font-size:11px; margin:0;">إيصال طلب — شاهين إكسبريس 🦅</p>
+                </div>
+                <hr>
+                <p style="font-size:12px;">رقم الطلب: #${String(o.id).slice(-6)}<br>
+                العميل: ${escHtml(o.customer_name) || 'عميل شاهين'}<br>
+                التاريخ: ${new Date(o.created_at).toLocaleString('ar-SY')}</p>
+                <hr>
+                <table>${itemsRows}</table>
+                <hr>
+                <table><tr class="total-row"><td>الإجمالي</td><td style="text-align:left;">${Number(o.total || itemsTotal).toLocaleString()} ل.س</td></tr></table>
+                <hr>
+                <p class="center" style="font-size:10px;">شكراً لاختياركم شاهين إكسبريس 🦅</p>
+            </body></html>`;
+
+        let frame = document.getElementById('receipt-print-frame');
+        if (!frame) {
+            frame = document.createElement('iframe');
+            frame.id = 'receipt-print-frame';
+            frame.style.position = 'fixed'; frame.style.right = '-9999px'; frame.style.width = '0'; frame.style.height = '0'; frame.style.border = 'none';
+            document.body.appendChild(frame);
+        }
+        const doc = frame.contentWindow.document;
+        doc.open(); doc.write(receiptHtml); doc.close();
+        setTimeout(() => { try { frame.contentWindow.focus(); frame.contentWindow.print(); } catch(e) { console.error('[AUTO-PRINT] خطأ أثناء الطباعة:', e); } }, 300);
+    }
+
+    // ===== [AUTO-ACCEPT] قبول تلقائي للطلبات الجديدة + طباعة إيصال فوراً، بدون أي تدخل يدوي =====
+    function _getAutoAcceptedSet() {
+        try { return new Set(JSON.parse(localStorage.getItem('sh_auto_accepted_ids') || '[]')); }
+        catch(e) { return new Set(); }
+    }
+    function _saveAutoAcceptedSet(set) {
+        try { localStorage.setItem('sh_auto_accepted_ids', JSON.stringify(Array.from(set))); } catch(e) {}
+    }
+    async function _autoAcceptNewOrders(newSearchingOrders) {
+        if (!newSearchingOrders.length) return;
+        const seen = _getAutoAcceptedSet();
+        for (const o of newSearchingOrders) {
+            if (seen.has(String(o.id))) continue; // طلب سبق قبوله تلقائياً، لا نكرر العملية
+            seen.add(String(o.id));
+            try {
+                await _sb.from('orders').update({ status: 'accepted', restaurant_note: '📥 تم استلام طلبك — بدأنا التجهيز ✅' }).eq('id', o.id);
+                await _sb.from('sh_public_orders').update({ status: 'accepted', restaurant_note: '📥 تم استلام طلبك — بدأنا التجهيز ✅' }).eq('id', o.id);
+                const { data: ord } = await _sb.from('sh_public_orders').select('customer_id, driver_id').eq('id', o.id).single();
+                if (ord?.customer_id) {
+                    await _sb.from('notifications').insert([{ user_id: ord.customer_id, message: '🍽️ تحديث طلبك من ' + (currentRes?.name || 'المطعم') + ': 📥 تم استلام طلبك — بدأنا التجهيز ✅', type: 'order_status', created_at: new Date().toISOString() }]).catch(() => {});
+                }
+                showToast('✅ تم قبول الطلب تلقائياً وطباعة الإيصال 🦅');
+                printOrderReceipt(o);
+            } catch(e) {
+                console.error('[AUTO-ACCEPT] خطأ أثناء القبول التلقائي للطلب:', o.id, e);
+                seen.delete(String(o.id)); // نعيد المحاولة في الدورة القادمة إن فشلت هذه المرة
+            }
+        }
+        _saveAutoAcceptedSet(seen);
+    }
+
     async function loadOrders(isFirst = false) {
         if (!currentRes) return;
         // ===== التحقق من صلاحية تجهيز الطلبات =====
@@ -699,9 +721,11 @@
         });
         allOrders = _filtered;
 
-        // ===== [AUTO-39] قبول تلقائي وطباعة إيصال فور وصول طلب جديد لصفحة المطعم =====
-        autoHandleNewOrders(allOrders, isFirst);
-        // ===== نهاية [AUTO-39] =====
+        // [AUTO-ACCEPT] قبول فوري تلقائي لكل طلب جديد بحالة "searching" + طباعة إيصال — بدون أي تدخل يدوي
+        const _newSearchingOrders = _filtered.filter(o => o.status === 'searching');
+        if (_newSearchingOrders.length > 0) {
+            _autoAcceptNewOrders(_newSearchingOrders).then(() => loadOrders(false));
+        }
 
         const newCount = allOrders.length;
         // ===== حساب عدد طلبات التجهيز وعدد طلبات التواصل بشكل منفصل =====
@@ -885,109 +909,6 @@
         showToast('تم رفض الطلب');
         loadOrders(false);
     }
-
-    // ===== [AUTO-39] قبول تلقائي + طباعة تلقائية فور وصول الطلب لصفحة المطعم =====
-    // حالتان:
-    // 1) طلب جديد لسا ما اتقبل (status === 'searching') ← يقبله المطعم تلقائياً ثم يطبع.
-    // 2) طلب وصل لصفحة المطعم وهو مقبول أصلاً (status accepted/preparing/ready) ← هذا يحصل
-    //    عندما يكون المطعم "غير شريك" (allow_orders=false)، فالطلب ما يظهر له إلا بعد ما
-    //    يقبله المندوب — بهاي الحالة لا داعي لقبول إضافي، فقط نطبع الإيصال فوراً.
-    function autoHandleNewOrders(orders, isFirst) {
-        (orders || []).forEach(o => {
-            if (o.is_consultation === true) return;
-            if (o.status === 'consulting' || o.status === 'pending_store') return;
-            const idKey = String(o.id);
-
-            if (o.status === 'searching') {
-                // طلب يحتاج قبول فوري دائماً (حتى لو كان موجود من قبل فتح الصفحة)
-                if (getAutoAcceptEnabled() && !_autoProcessedIds.has(idKey)) {
-                    _autoProcessedIds.add(idKey);
-                    autoAcceptOrder(o);
-                }
-                return;
-            }
-
-            if (['accepted', 'preparing', 'ready'].includes(o.status)) {
-                if (isFirst) {
-                    // عند أول تحميل للصفحة: الطلبات الموجودة فعلاً (قديمة) لا تُطبع من جديد
-                    if (!_printedOrderIds.has(idKey)) _markOrderPrinted(idKey);
-                    return;
-                }
-                // طلب ظهر لأول مرة بصفحة المطعم (مثلاً بعد ما قبله المندوب) ← اطبع فوراً
-                if (getAutoPrintEnabled() && !_printedOrderIds.has(idKey)) {
-                    printOrderReceipt(o);
-                    _markOrderPrinted(idKey);
-                }
-            }
-        });
-    }
-
-    async function autoAcceptOrder(order) {
-        const idKey = String(order.id);
-        const msg = '📥 تم استلام طلبك — بدأنا التجهيز ✅';
-        try {
-            await _sb.from('orders').update({ status: 'accepted', restaurant_note: msg }).eq('id', order.id);
-            await _sb.from('sh_public_orders').update({ status: 'accepted', restaurant_note: msg }).eq('id', order.id);
-            const { data: ord } = await _sb.from('sh_public_orders').select('customer_id, driver_id').eq('id', order.id).single();
-            if (ord?.customer_id) {
-                await _sb.from('notifications').insert([{
-                    user_id: ord.customer_id,
-                    message: '🍽️ تحديث طلبك من ' + (currentRes?.name || 'المطعم') + ': ' + msg,
-                    type: 'order_status', created_at: new Date().toISOString()
-                }]).catch(() => {});
-            }
-            // إخفاء زر "تم استلام الطلب" اليدوي بما أنه قُبل تلقائياً
-            const used = JSON.parse(localStorage.getItem('sh_used') || '{}');
-            used[`${order.id}_m1`] = true;
-            localStorage.setItem('sh_used', JSON.stringify(used));
-            showToast('✅ تم قبول الطلب تلقائياً');
-            printOrderReceipt(order);
-            _markOrderPrinted(idKey);
-            loadOrders(false);
-        } catch (e) {
-            _autoProcessedIds.delete(idKey); // فشل التحديث — إعادة المحاولة بالتحديث القادم
-        }
-    }
-
-    // تسجيل الطلب كمطبوع بشكل دائم (يبقى محفوظ حتى بعد إغلاق الصفحة) لمنع إعادة الطباعة
-    function _markOrderPrinted(idKey) {
-        _printedOrderIds.add(idKey);
-        let arr = Array.from(_printedOrderIds);
-        if (arr.length > 300) arr = arr.slice(arr.length - 300); // تقليم القائمة لمنع التضخّم
-        _printedOrderIds = new Set(arr);
-        try { localStorage.setItem('sh_printed_orders', JSON.stringify(arr)); } catch (e) {}
-    }
-
-    // طباعة إيصال يحوي الشعار، اسم المتجر، ومعلومات الطلب — تلقائياً دون أي تدخل
-    function printOrderReceipt(order) {
-        if (!getAutoPrintEnabled()) return;
-        const box = document.getElementById('print-receipt');
-        if (!box) return;
-        const cfg = getCfg(currentRes ? currentRes.specialty_type : null);
-        let itemsArr = [];
-        try { itemsArr = JSON.parse(order.items || '[]'); } catch (e) {}
-        const itemsHtml = itemsArr.length
-            ? itemsArr.map(i => `<div class="pr-item-row"><span>${escHtml(i.n)}</span><span>${(i.p || 0).toLocaleString()} ل.س</span></div>`).join('')
-            : '<div class="pr-item-row"><span>لا توجد أصناف مفصّلة</span></div>';
-        box.innerHTML = `
-            <img class="pr-logo" src="https://i.postimg.cc/QxzPkmPf/Whats-App-Image-2026-04-10-at-6-22-30-PM-t7edrz.jpg">
-            <div class="pr-name">${escHtml(currentRes ? currentRes.name : '')}</div>
-            <div class="pr-sub">${cfg.icon} ${cfg.label}</div>
-            <div class="pr-divider"></div>
-            <div class="pr-meta">
-                <div>رقم الطلب: #${String(order.id).slice(-6)}</div>
-                <div>التاريخ: ${new Date(order.created_at).toLocaleString('ar-SY')}</div>
-                <div>الزبون: ${escHtml(order.customer_name) || 'عميل شاهين'}</div>
-            </div>
-            <div class="pr-divider"></div>
-            <div class="pr-items">${itemsHtml}</div>
-            <div class="pr-divider"></div>
-            <div class="pr-total">💰 الإجمالي: ${order.total ? Number(order.total).toLocaleString() : '0'} ل.س</div>
-            <div class="pr-footer">🦅 شاهين إكسبريس — شكراً لطلبكم</div>
-        `;
-        setTimeout(() => { try { window.print(); } catch (e) {} }, 150);
-    }
-    // ===== نهاية [AUTO-39] =====
 
     // ===== عرض قائمة الدردشة =====
     function renderChatOrders() {
