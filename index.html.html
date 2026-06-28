@@ -1035,37 +1035,26 @@ window.createMinimalSupabaseClient = createMinimalSupabaseClient;
 
         if (_getPrintedSet().has(String(o.id))) { posLog('info', `تم تجاهل طباعة مكررة لطلب #${String(o.id).slice(-6)} (طُبع مسبقاً على هذا الجهاز)`); return; }
 
+        // [FIX-NATIVE-PRINT-BRIDGE] الطباعة الآن تعتمد على window.print() القياسية، والتي يجب أن يربطها
+        // غلاف التطبيق (Wrapper) بطابعة النظام مباشرة عبر جسر الطباعة الأصلي لأندرويد (PrintManager) —
+        // هذا يتطلب استخدام أداة تحويل موقع لتطبيق تدعم الطباعة بشكل جاهز (مثل Median.co)، فلا حاجة
+        // لأي كود JS معقَّد، الجسر الأصلي نفسه هو ما يرسل الإيصال لطابعة النظام المسجَّلة فعلياً
         const widthMm = (_posDeviceInfo && _posDeviceInfo.paper_width_mm) || 58;
-        const printerName = (_posDeviceInfo && _posDeviceInfo.printer_name) || null;
         const html = _buildReceiptHtml(o, widthMm);
-
-        if (_qzConnected && printerName) {
-            try {
-                const config = qz.configs.create(printerName);
-                // [FIX-PAPER-CUT] أمر قص الورق الخام (ESC/POS) يُرسَل بعد محتوى الإيصال مباشرة، إن كانت
-                // الطابعة تدعمه — أمر GS V 0 هو أمر القص الكامل القياسي المعتمَد في أغلب الطابعات الحرارية
-                await qz.print(config, [
-                    { type: 'pixel', format: 'html', flavor: 'plain', data: html },
-                    { type: 'raw', format: 'command', data: '\x1D\x56\x00' }
-                ]);
-                _markPrinted(o.id);
-                _setOrderPrintStatus(o.id, 'printed', null);
-                posLog('success', `✅ تمت طباعة إيصال الطلب #${String(o.id).slice(-6)} على "${printerName}" بنجاح`);
-                return;
-            } catch(e) {
-                posLog('failed', `❌ فشلت طباعة الطلب #${String(o.id).slice(-6)} عبر QZ Tray: ${e.message} — أُضيف لطابور إعادة المحاولة`);
-                _setOrderPrintStatus(o.id, 'failed', e.message);
-                _queuePrint(o);
-                _showPrintFailureBanner(o, e.message);
-                return;
-            }
+        try {
+            _printViaIframeFallback(html);
+            _markPrinted(o.id);
+            // [FIX-HONEST-LIMIT] لا توجد طريقة في معيار الويب لمعرفة هل اكتملت الطباعة فعلياً بنجاح بعد
+            // فتح نافذة الطباعة (window.print لا تُرجع نتيجة) — نُسجِّلها "مطبوعة" تقديرياً، وزر "إعادة
+            // الطباعة" يبقى متاحاً دائماً يدوياً لأي تصحيح لازم
+            _setOrderPrintStatus(o.id, 'printed', null);
+            posLog('success', `🖨️ تم إرسال طلب الطباعة للطلب #${String(o.id).slice(-6)} إلى نظام الطباعة`);
+        } catch(e) {
+            posLog('failed', `❌ فشل إرسال أمر الطباعة للطلب #${String(o.id).slice(-6)}: ${e.message}`);
+            _setOrderPrintStatus(o.id, 'failed', e.message);
+            _queuePrint(o);
+            _showPrintFailureBanner(o, e.message);
         }
-
-        posLog('queued', `⏳ لا يوجد اتصال بوكيل الطباعة حالياً — الطلب #${String(o.id).slice(-6)} بانتظار إعادة المحاولة التلقائية`);
-        _setOrderPrintStatus(o.id, 'pending', 'الطابعة غير متصلة حالياً');
-        _queuePrint(o);
-        _showPrintFailureBanner(o, 'الطابعة الحرارية غير متصلة حالياً');
-        _printViaIframeFallback(html);
     }
 
     // [FIX-PRINT-STATUS-DB] تحديث حالة الطباعة في قاعدة البيانات — مرئية لأي جهاز/متصفح آخر يفتح نفس الطلب
@@ -1120,7 +1109,12 @@ window.createMinimalSupabaseClient = createMinimalSupabaseClient;
             document.body.appendChild(frame);
         }
         const doc = frame.contentWindow.document;
-        doc.open(); doc.write(`<html dir="rtl"><body>${html}</body></html>`); doc.close();
+        // [FIX-PRINT-PAGE-SIZE] إعداد @page بعرض الورق الصحيح وبلا أي حواف، لضمان طباعة نظيفة بكامل
+        // عرض الإيصال الحراري بدل تنسيق ورقة A4 الافتراضي الذي قد يضغط/يكبّر المحتوى بشكل خاطئ
+        const widthMm = (_posDeviceInfo && _posDeviceInfo.paper_width_mm) || 58;
+        doc.open();
+        doc.write('<html dir="rtl"><head><style>@page { size: ' + widthMm + 'mm auto; margin: 0; } body { margin: 0; padding: 0; }</style></head><body>' + html + '</body></html>');
+        doc.close();
         setTimeout(() => { try { frame.contentWindow.focus(); frame.contentWindow.print(); } catch(e) {} }, 300);
     }
 
@@ -1129,16 +1123,13 @@ window.createMinimalSupabaseClient = createMinimalSupabaseClient;
         if (!o) { showToast('⚠️ تعذّر العثور على بيانات الطلب للطباعة'); return; }
         const widthMm = (_posDeviceInfo && _posDeviceInfo.paper_width_mm) || 58;
         const html = _buildReceiptHtml(o, widthMm);
-        if (_qzConnected && _posDeviceInfo && _posDeviceInfo.printer_name) {
-            const config = qz.configs.create(_posDeviceInfo.printer_name);
-            qz.print(config, [
-                { type: 'pixel', format: 'html', flavor: 'plain', data: html },
-                { type: 'raw', format: 'command', data: '\x1D\x56\x00' }
-            ])
-                .then(() => { posLog('success', `✅ طباعة يدوية ناجحة للطلب #${String(orderId).slice(-6)}`); _setOrderPrintStatus(orderId, 'printed', null); })
-                .catch(e => { posLog('failed', `❌ فشلت الطباعة اليدوية: ${e.message}`); _printViaIframeFallback(html); });
-        } else {
+        try {
             _printViaIframeFallback(html);
+            posLog('success', `🖨️ طباعة يدوية تم إرسالها للطلب #${String(orderId).slice(-6)}`);
+            _setOrderPrintStatus(orderId, 'printed', null);
+        } catch(e) {
+            posLog('failed', `❌ فشلت الطباعة اليدوية: ${e.message}`);
+            showToast('⚠️ تعذّر فتح نافذة الطباعة: ' + e.message);
         }
     }
 
@@ -1366,11 +1357,8 @@ window.createMinimalSupabaseClient = createMinimalSupabaseClient;
                 <button class="sbtn sbtn-reject" onclick="rejectOrder('${o.id}')"><i class="fas fa-times"></i> رفض الطلب</button>`;
             } else {
                 btns = `
-                <button class="sbtn sbtn-accept ${isU(o.id,'m1')}"  onclick="updateStatus('${o.id}','accepted','📥 تم استلام طلبك — بدأنا التجهيز ✅','m1')">📥 تم استلام الطلب</button>
-                <button class="sbtn sbtn-prep   ${isU(o.id,'m2')}"  onclick="updateStatus('${o.id}','preparing','🍳 طلبك قيد التجهيز الآن','m2')">🍳 قيد التجهيز</button>
-                <button class="sbtn sbtn-ready  ${isU(o.id,'m3')}"  onclick="updateStatus('${o.id}','ready','✅ طلبك جاهز وبانتظار المندوب 🦅','m3')">✅ تم التجهيز — جاهز</button>
-                <button class="sbtn sbtn-sent   ${isU(o.id,'m4')}"  onclick="updateStatus('${o.id}','picked','🦅 تم تسليم طلبك للمندوب','m4')">🦅 تسليم للمندوب</button>
-                <button class="sbtn" style="background:rgba(212,175,55,0.12); color:var(--gold); border:1px solid var(--gold);" onclick="printOrderReceiptById('${o.id}')"><i class="fas fa-print"></i> طباعة الإيصال يدوياً</button>`;
+                <button class="sbtn sbtn-ready  ${isU(o.id,'m3')}"  onclick="updateStatus('${o.id}','ready','✅ طلبك جاهز وبانتظار المندوب 🦅','m3')">✅ الطلب جاهز</button>
+                <button class="sbtn" style="background:rgba(212,175,55,0.12); color:var(--gold); border:1px solid var(--gold);" onclick="printOrderReceiptById('${o.id}')"><i class="fas fa-print"></i> إعادة طباعة الإيصال</button>`;
             }
             return `
             <div class="order-card ${isChat ? 'chat-order' : (o.status==='accepted'||o.status==='preparing'||o.status==='ready' ? 'in-progress' : 'new-order')}">
