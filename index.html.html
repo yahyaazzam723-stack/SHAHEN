@@ -789,8 +789,8 @@
 
     async function savePosDevicePairing() {
         if (!currentRes) { showToast('سجّل دخولك أولاً'); return; }
-        const printerName = document.getElementById('pos-printer-select')?.value || null;
-        const paperWidth = parseInt(document.getElementById('pos-paper-width-select')?.value) || 80;
+        const printerName = (document.getElementById('pos-printer-select') ? document.getElementById('pos-printer-select').value : null);
+        const paperWidth = parseInt(document.getElementById('pos-paper-width-select') ? document.getElementById('pos-paper-width-select').value : 0) || 80;
         try {
             const { error } = await _sb.from('pos_devices').upsert([{
                 device_id: POS_DEVICE_ID, restaurant_id: currentRes.id, restaurant_name: currentRes.name,
@@ -843,8 +843,8 @@
     async function printOrderReceipt(o) {
         if (_getPrintedSet().has(String(o.id))) { posLog('info', `تم تجاهل طباعة مكررة لطلب #${String(o.id).slice(-6)} (طُبع مسبقاً)`); return; }
 
-        const widthMm = _posDeviceInfo?.paper_width_mm || 80;
-        const printerName = _posDeviceInfo?.printer_name || null;
+        const widthMm = (_posDeviceInfo && _posDeviceInfo.paper_width_mm) || 80;
+        const printerName = (_posDeviceInfo && _posDeviceInfo.printer_name) || null;
         const html = _buildReceiptHtml(o, widthMm);
 
         if (_qzConnected && printerName) {
@@ -881,8 +881,8 @@
         const remaining = [];
         for (const o of q) {
             if (_getPrintedSet().has(String(o.id))) continue;
-            const widthMm = _posDeviceInfo?.paper_width_mm || 80;
-            const printerName = _posDeviceInfo?.printer_name;
+            const widthMm = (_posDeviceInfo && _posDeviceInfo.paper_width_mm) || 80;
+            const printerName = (_posDeviceInfo && _posDeviceInfo.printer_name);
             if (!printerName) { remaining.push(o); continue; }
             try {
                 const config = qz.configs.create(printerName);
@@ -913,9 +913,9 @@
     function printOrderReceiptById(orderId) {
         const o = allOrders.find(x => String(x.id) === String(orderId)) || historyOrders.find(x => String(x.id) === String(orderId));
         if (!o) { showToast('⚠️ تعذّر العثور على بيانات الطلب للطباعة'); return; }
-        const widthMm = _posDeviceInfo?.paper_width_mm || 80;
+        const widthMm = (_posDeviceInfo && _posDeviceInfo.paper_width_mm) || 80;
         const html = _buildReceiptHtml(o, widthMm);
-        if (_qzConnected && _posDeviceInfo?.printer_name) {
+        if (_qzConnected && _posDeviceInfo && _posDeviceInfo.printer_name) {
             const config = qz.configs.create(_posDeviceInfo.printer_name);
             qz.print(config, [{ type: 'pixel', format: 'html', flavor: 'plain', data: html }])
                 .then(() => posLog('success', `✅ طباعة يدوية ناجحة للطلب #${String(orderId).slice(-6)}`))
@@ -943,8 +943,8 @@
                 await _sb.from('orders').update({ status: 'accepted', restaurant_note: '📥 تم استلام طلبك — بدأنا التجهيز ✅' }).eq('id', o.id);
                 await _sb.from('sh_public_orders').update({ status: 'accepted', restaurant_note: '📥 تم استلام طلبك — بدأنا التجهيز ✅' }).eq('id', o.id);
                 const { data: ord } = await _sb.from('sh_public_orders').select('customer_id, driver_id').eq('id', o.id).single();
-                if (ord?.customer_id) {
-                    await _sb.from('notifications').insert([{ user_id: ord.customer_id, message: '🍽️ تحديث طلبك من ' + (currentRes?.name || 'المطعم') + ': 📥 تم استلام طلبك — بدأنا التجهيز ✅', type: 'order_status', created_at: new Date().toISOString() }]).catch(() => {});
+                if ((ord && ord.customer_id)) {
+                    await _sb.from('notifications').insert([{ user_id: ord.customer_id, message: '🍽️ تحديث طلبك من ' + ((currentRes && currentRes.name) || 'المطعم') + ': 📥 تم استلام طلبك — بدأنا التجهيز ✅', type: 'order_status', created_at: new Date().toISOString() }]).catch(() => {});
                 }
                 showToast('✅ تم قبول الطلب تلقائياً وطباعة الإيصال 🦅');
                 printOrderReceipt(o);
@@ -1094,7 +1094,7 @@
 
     // ===== عرض الطلبات =====
     function filterAndRenderOrders() {
-        const term = (document.getElementById('orders-search')?.value || '').toLowerCase();
+        const term = ((document.getElementById('orders-search') ? document.getElementById('orders-search').value : '')).toLowerCase();
         // ===== الفصل الكامل: تبويب الطلبات يعرض طلبات المنيو فقط =====
         // is_consultation=true = تواصل مباشر → ممنوع ظهوره هنا نهائياً
         // is_consultation=false/null = طلب منيو → يظهر هنا فقط
@@ -1179,14 +1179,14 @@
         await _sb.from('sh_public_orders').update({ status, restaurant_note: msg }).eq('id', id);
         // إشعار للعميل والمندوب
         const { data: ord } = await _sb.from('sh_public_orders').select('customer_id, driver_id').eq('id', id).single();
-        if (ord?.customer_id) {
+        if ((ord && ord.customer_id)) {
             await _sb.from('notifications').insert([{
                 user_id: ord.customer_id,
-                message: '🍽️ تحديث طلبك من ' + (currentRes?.name || 'المطعم') + ': ' + msg,
+                message: '🍽️ تحديث طلبك من ' + ((currentRes && currentRes.name) || 'المطعم') + ': ' + msg,
                 type: 'order_status', created_at: new Date().toISOString()
             }]).catch(() => {});
         }
-        if (ord?.driver_id) {
+        if ((ord && ord.driver_id)) {
             await _sb.from('notifications').insert([{
                 user_id: ord.driver_id,
                 message: '🍽️ تحديث طلب المطعم: ' + msg,
@@ -1346,7 +1346,7 @@
         const total   = calcInvoiceTotal();
         if (!details || total === 0) { showToast('يرجى كتابة الأصناف والأسعار ❌'); return; }
         const targetId = activeOrderId;
-        const invoice  = '🧾 فاتورة ' + (currentRes?.name||'المطعم') + ':\n──────────\n' + details + '\n──────────\n💰 الإجمالي: ' + total.toLocaleString() + ' ل.س';
+        const invoice  = '🧾 فاتورة ' + ((currentRes && currentRes.name)||'المطعم') + ':\n──────────\n' + details + '\n──────────\n💰 الإجمالي: ' + total.toLocaleString() + ' ل.س';
         const { error } = await _sb.from('sh_public_orders').update({
             order_details: invoice, order_price: total, total: total,
             restaurant_note: 'INVOICE_SENT:' + total, status: 'store_invoice_sent'
