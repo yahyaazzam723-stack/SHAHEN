@@ -592,6 +592,13 @@
 
     // ===== جلب الطلبات =====
     // ===== [AUTO-ACCEPT-PRINT] طباعة إيصال تلقائية بشعار المطعم عند قبول الطلب =====
+    // [MANUAL-PRINT] طباعة يدوية بضغطة زر من بطاقة الطلب — تستخدم نفس دالة الطباعة التلقائية بالضبط
+    function printOrderReceiptById(orderId) {
+        const o = allOrders.find(x => String(x.id) === String(orderId)) || historyOrders.find(x => String(x.id) === String(orderId));
+        if (!o) { showToast('⚠️ تعذّر العثور على بيانات الطلب للطباعة'); return; }
+        printOrderReceipt(o);
+    }
+
     function printOrderReceipt(o) {
         let itemsRows = '';
         let itemsTotal = 0;
@@ -707,7 +714,10 @@
 
         const _filtered = (orders || []).filter(o => {
             if (_archivedOrderIds.has(String(o.id))) return false;
-            if (o.status === 'searching' && o.is_consultation === false) { _archivedOrderIds.add(String(o.id)); return false; }
+            // [FIX-ORDERS-NOT-ARRIVING] هذا الشرط كان يُخفي كل الطلبات العادية من قائمة المطعم بالكامل
+            // طالما حالتها "searching" — لأن كل طلب منيو عادي يُنشأ بـ is_consultation=false دائماً!
+            // هذا يعني أن الطلبات الجديدة لم تكن تصل إطلاقاً لهذه الصفحة قبل هذا الإصلاح.
+            // if (o.status === 'searching' && o.is_consultation === false) { _archivedOrderIds.add(String(o.id)); return false; }
             // ===== الفصل الكامل بين النظامين =====
             // طلب التواصل المباشر (direct_chat) → خانة التواصل فقط، لا يظهر في خانة الطلبات
             // طلب المنيو (menu_order) → خانة الطلبات فقط، لا يذهب للمحادثات
@@ -858,7 +868,8 @@
                 <button class="sbtn sbtn-accept ${isU(o.id,'m1')}"  onclick="updateStatus('${o.id}','accepted','📥 تم استلام طلبك — بدأنا التجهيز ✅','m1')">📥 تم استلام الطلب</button>
                 <button class="sbtn sbtn-prep   ${isU(o.id,'m2')}"  onclick="updateStatus('${o.id}','preparing','🍳 طلبك قيد التجهيز الآن','m2')">🍳 قيد التجهيز</button>
                 <button class="sbtn sbtn-ready  ${isU(o.id,'m3')}"  onclick="updateStatus('${o.id}','ready','✅ طلبك جاهز وبانتظار المندوب 🦅','m3')">✅ تم التجهيز — جاهز</button>
-                <button class="sbtn sbtn-sent   ${isU(o.id,'m4')}"  onclick="updateStatus('${o.id}','picked','🦅 تم تسليم طلبك للمندوب','m4')">🦅 تسليم للمندوب</button>`;
+                <button class="sbtn sbtn-sent   ${isU(o.id,'m4')}"  onclick="updateStatus('${o.id}','picked','🦅 تم تسليم طلبك للمندوب','m4')">🦅 تسليم للمندوب</button>
+                <button class="sbtn" style="background:rgba(212,175,55,0.12); color:var(--gold); border:1px solid var(--gold);" onclick="printOrderReceiptById('${o.id}')"><i class="fas fa-print"></i> طباعة الإيصال يدوياً</button>`;
             }
             return `
             <div class="order-card ${isChat ? 'chat-order' : (o.status==='accepted'||o.status==='preparing'||o.status==='ready' ? 'in-progress' : 'new-order')}">
@@ -1099,6 +1110,7 @@
             <div style="font-size:11px;opacity:0.5;">#${escHtml(String(o.id))} · ${new Date(o.created_at).toLocaleString('ar-SY')}</div>
             ${o.order_details ? `<div class="ai-detail">${escHtml(o.order_details)}</div>` : ''}
             ${(o.total||o.order_price) ? `<div style="font-size:12px;color:var(--gold);margin-top:5px;">💰 ${(Number(o.total||0)||Number(o.order_price||0)).toLocaleString()} ل.س</div>` : ''}
+            <button class="sbtn" style="margin-top:8px; background:rgba(212,175,55,0.12); color:var(--gold); border:1px solid var(--gold); padding:7px;" onclick="printOrderReceiptById('${o.id}')"><i class="fas fa-print"></i> إعادة طباعة الإيصال</button>
         </div>`).join('');
     }
 
