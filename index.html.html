@@ -424,6 +424,7 @@
     let msgIds = new Set(), _archivedOrderIds = new Set(), _msgPollInterval = null;
     let _lastOrderCount = 0;
     let _autoProcessedIds = new Set(); // ===== [AUTO-39] منع معالجة الطلب الجديد أكثر من مرة =====
+    let _printedOrderIds = new Set((() => { try { return JSON.parse(localStorage.getItem('sh_printed_orders') || '[]'); } catch (e) { return []; } })()); // ===== [AUTO-39] تذكّر الطلبات المطبوعة سابقاً عبر إعادة تحميل الصفحة =====
     // ===== صوتان منفصلان: صوت الطلبات وصوت التواصل/الرسائل =====
     const sound = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
     const chatSound = new Audio('https://assets.mixkit.co/active_storage/sfx/1862/1862-preview.mp3');
@@ -698,8 +699,8 @@
         });
         allOrders = _filtered;
 
-        // ===== [AUTO-39] قبول تلقائي وطباعة إيصال فور وصول طلب جديد =====
-        autoHandleNewOrders(allOrders);
+        // ===== [AUTO-39] قبول تلقائي وطباعة إيصال فور وصول طلب جديد لصفحة المطعم =====
+        autoHandleNewOrders(allOrders, isFirst);
         // ===== نهاية [AUTO-39] =====
 
         const newCount = allOrders.length;
@@ -885,21 +886,44 @@
         loadOrders(false);
     }
 
-    // ===== [AUTO-39] قبول الطلبات تلقائياً + طباعة إيصال تلقائي =====
-    // يفحص الطلبات الجديدة (status === 'searching') ويقبلها فوراً دون أي تدخل يدوي
-    function autoHandleNewOrders(orders) {
-        if (!getAutoAcceptEnabled()) return;
+    // ===== [AUTO-39] قبول تلقائي + طباعة تلقائية فور وصول الطلب لصفحة المطعم =====
+    // حالتان:
+    // 1) طلب جديد لسا ما اتقبل (status === 'searching') ← يقبله المطعم تلقائياً ثم يطبع.
+    // 2) طلب وصل لصفحة المطعم وهو مقبول أصلاً (status accepted/preparing/ready) ← هذا يحصل
+    //    عندما يكون المطعم "غير شريك" (allow_orders=false)، فالطلب ما يظهر له إلا بعد ما
+    //    يقبله المندوب — بهاي الحالة لا داعي لقبول إضافي، فقط نطبع الإيصال فوراً.
+    function autoHandleNewOrders(orders, isFirst) {
         (orders || []).forEach(o => {
-            if (o.status === 'searching' && o.is_consultation !== true) {
-                autoAcceptOrder(o);
+            if (o.is_consultation === true) return;
+            if (o.status === 'consulting' || o.status === 'pending_store') return;
+            const idKey = String(o.id);
+
+            if (o.status === 'searching') {
+                // طلب يحتاج قبول فوري دائماً (حتى لو كان موجود من قبل فتح الصفحة)
+                if (getAutoAcceptEnabled() && !_autoProcessedIds.has(idKey)) {
+                    _autoProcessedIds.add(idKey);
+                    autoAcceptOrder(o);
+                }
+                return;
+            }
+
+            if (['accepted', 'preparing', 'ready'].includes(o.status)) {
+                if (isFirst) {
+                    // عند أول تحميل للصفحة: الطلبات الموجودة فعلاً (قديمة) لا تُطبع من جديد
+                    if (!_printedOrderIds.has(idKey)) _markOrderPrinted(idKey);
+                    return;
+                }
+                // طلب ظهر لأول مرة بصفحة المطعم (مثلاً بعد ما قبله المندوب) ← اطبع فوراً
+                if (getAutoPrintEnabled() && !_printedOrderIds.has(idKey)) {
+                    printOrderReceipt(o);
+                    _markOrderPrinted(idKey);
+                }
             }
         });
     }
 
     async function autoAcceptOrder(order) {
         const idKey = String(order.id);
-        if (_autoProcessedIds.has(idKey)) return; // تم قبوله مسبقاً، تجنّب التكرار
-        _autoProcessedIds.add(idKey);
         const msg = '📥 تم استلام طلبك — بدأنا التجهيز ✅';
         try {
             await _sb.from('orders').update({ status: 'accepted', restaurant_note: msg }).eq('id', order.id);
@@ -918,10 +942,20 @@
             localStorage.setItem('sh_used', JSON.stringify(used));
             showToast('✅ تم قبول الطلب تلقائياً');
             printOrderReceipt(order);
+            _markOrderPrinted(idKey);
             loadOrders(false);
         } catch (e) {
             _autoProcessedIds.delete(idKey); // فشل التحديث — إعادة المحاولة بالتحديث القادم
         }
+    }
+
+    // تسجيل الطلب كمطبوع بشكل دائم (يبقى محفوظ حتى بعد إغلاق الصفحة) لمنع إعادة الطباعة
+    function _markOrderPrinted(idKey) {
+        _printedOrderIds.add(idKey);
+        let arr = Array.from(_printedOrderIds);
+        if (arr.length > 300) arr = arr.slice(arr.length - 300); // تقليم القائمة لمنع التضخّم
+        _printedOrderIds = new Set(arr);
+        try { localStorage.setItem('sh_printed_orders', JSON.stringify(arr)); } catch (e) {}
     }
 
     // طباعة إيصال يحوي الشعار، اسم المتجر، ومعلومات الطلب — تلقائياً دون أي تدخل
