@@ -8,9 +8,12 @@
     <meta name="referrer" content="no-referrer">
     <title>بوابة المطعم | شاهين إكسبريس 🦅</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- ===== [FIX-WEBVIEW-COMPAT] ملف Supabase محلي مُحوَّل (Babel) ليعمل على متصفحات/WebView قديمة
+         جداً (مثل أندرويد 7) — يجب رفع supabase-compat.js في نفس مجلد هذا الملف بالضبط ===== -->
+    <script src="supabase-compat.js"></script>
     <!-- ===== [POS-PRINT] مكتبة QZ Tray للتواصل مع وكيل الطباعة المحلي ===== -->
-    <script src="https://cdn.jsdelivr.net/npm/qz-tray@2.2.4/qz-tray.js"></script>
+    <!-- ===== [POS-PRINT] مكتبة QZ Tray محلياً (لا تحتاج تحويل، لكن استبعدنا أي اعتماد خارجي تماماً) ===== -->
+    <script src="qz-tray.js"></script>
     <style>
         :root {
             --gold: #d4af37; --gold-l: #f1d279;
@@ -423,17 +426,30 @@
     });
     debugLog('info', '🟢 بدأ تنفيذ سكربت الصفحة بنجاح');
 
-    let _sb;
-    try {
-        if (typeof supabase === 'undefined') throw new Error('مكتبة Supabase لم تُحمَّل — تحقق من اتصال الإنترنت أو من حظر WebView لروابط CDN الخارجية');
-        _sb = supabase.createClient(
-            'https://ricoslplbhphydhtrufe.supabase.co',
-            'sb_publishable_k6LgEuwPLdCsBMCFC12wfQ_BSOJotuw'
-        );
-        debugLog('info', '✅ تم تهيئة Supabase client بنجاح');
-    } catch(_sbInitErr) {
-        debugLog('error', '🔥 فشلت تهيئة Supabase بالكامل: ' + _sbInitErr.message);
+    // [FIX-WEBVIEW-LOGIN-V2] بدل افتراض أن مكتبة Supabase انتهت من التحميل فوراً بترتيب تسلسلي مضمون
+    // (قد لا يكون هذا مضموناً 100% على كل أنواع WebView)، نحاول التهيئة الآن، وإن فشلت لعدم اكتمال
+    // التحميل بعد، نعيد المحاولة تلقائياً كل 300ms لمدة تصل حتى 10 ثوانٍ قبل اعتبارها فاشلة نهائياً
+    let _sb = null;
+    let _sbInitAttempts = 0;
+    function _tryInitSupabase() {
+        _sbInitAttempts++;
+        try {
+            if (typeof supabase === 'undefined') {
+                if (_sbInitAttempts === 1) debugLog('info', '⏳ مكتبة Supabase لم تكتمل تحميلها بعد، جاري الانتظار وإعادة المحاولة...');
+                if (_sbInitAttempts < 33) { setTimeout(_tryInitSupabase, 300); return; }
+                debugLog('error', '🔥 فشلت تهيئة Supabase نهائياً بعد 10 ثوانٍ من الانتظار — مكتبة Supabase لم تُحمَّل أبداً. تحقق من اتصال الإنترنت، أو من حظر WebView لرابط cdn.jsdelivr.net تحديداً');
+                return;
+            }
+            _sb = supabase.createClient(
+                'https://ricoslplbhphydhtrufe.supabase.co',
+                'sb_publishable_k6LgEuwPLdCsBMCFC12wfQ_BSOJotuw'
+            );
+            debugLog('info', `✅ تم تهيئة Supabase client بنجاح (بعد ${_sbInitAttempts} محاولة)`);
+        } catch(_sbInitErr) {
+            debugLog('error', '🔥 خطأ أثناء تهيئة Supabase: ' + _sbInitErr.message);
+        }
     }
+    _tryInitSupabase();
 
     let currentRes = null, allOrders = [], historyOrders = [], refreshTimer = 0;
     let activeOrderId = null, chatChannel = null, statusChannel = null;
@@ -525,6 +541,23 @@
             const email = emailEl.value.trim().toLowerCase();
             const code  = codeEl.value.trim();
             if (!email || !code) { showToast('يرجى إدخال البريد والكود ❌'); debugLog('info', 'إيميل أو كود فاضي، توقفت العملية'); return; }
+
+            // [FIX-WEBVIEW-LOGIN-V2] إن لم تكتمل تهيئة Supabase بعد عند الضغط على الزر، نحاول تهيئتها
+            // الآن مباشرة بشكل أخير قبل الفشل النهائي — يفيد لو كان الانتظار التلقائي لم يكتمل بعد
+            if (!_sb) {
+                debugLog('info', '⏳ Supabase غير جاهزة بعد، محاولة تهيئة أخيرة فورية...');
+                try {
+                    if (typeof supabase !== 'undefined') {
+                        _sb = supabase.createClient('https://ricoslplbhphydhtrufe.supabase.co', 'sb_publishable_k6LgEuwPLdCsBMCFC12wfQ_BSOJotuw');
+                        debugLog('info', '✅ نجحت المحاولة الأخيرة لتهيئة Supabase');
+                    }
+                } catch(e) { debugLog('error', 'فشلت المحاولة الأخيرة أيضاً: ' + e.message); }
+                if (!_sb) {
+                    showToast('⚠️ تعذّر الاتصال بالخادم — تحقق من الإنترنت وحاول مجدداً بعد ثوانٍ');
+                    debugLog('error', '🔥 توقفت العملية — Supabase غير جاهزة إطلاقاً (مكتبة لم تُحمَّل من الإنترنت)');
+                    return;
+                }
+            }
 
             debugLog('info', `📡 جاري الاتصال بـ Supabase للبحث عن: ${email}`);
             const { data: rowData, error: rowError } = await _sb.from('restaurants').select('*').ilike('email', email).maybeSingle();
