@@ -1,1800 +1,312 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <!-- [SEC-PATCH-19] رؤوس أمان إضافية -->
-    <meta http-equiv="X-Content-Type-Options" content="nosniff">
-    <meta name="referrer" content="no-referrer">
-    <title>بوابة المطعم | شاهين إكسبريس 🦅</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- ===== [FIX-WEBVIEW-COMPAT] ملف Supabase محلي مُحوَّل (Babel) ليعمل على متصفحات/WebView قديمة
-         جداً (مثل أندرويد 7) — يجب رفع supabase-compat.js في نفس مجلد هذا الملف بالضبط ===== -->
-    <!-- ===== [SH-MINIMAL-CLIENT] عميل مبسَّط مضمَّن مباشرة داخل الصفحة نفسها — لا يعتمد على أي ملف
-         خارجي منفصل إطلاقاً، لتجاوز أي مشكلة في تحميل ملفات <script src> الجانبية داخل WebView ===== -->
-    <script>
-window._supabaseScriptLoaded = true;
-// ===========================================================================
-// [SH-MINIMAL-CLIENT] عميل مبسَّط مكتوب يدوياً، بديل كامل عن مكتبة Supabase الرسمية —
-// يستخدم فقط XMLHttpRequest (أقدم وأوسع توافقاً من fetch) وبدون أي صياغة JS حديثة
-// (لا ?. ولا ?? ولا async/await) — متوافق 100% مع أي محرك متصفح، بلا أي استثناء
-// ===========================================================================
-function createMinimalSupabaseClient(baseUrl, apiKey) {
-    function QueryBuilder(table) {
-        this._table = table;
-        this._select = '*';
-        this._filters = [];
-        this._order = null;
-        this._limit = null;
-        this._single = false;
-        this._maybeSingle = false;
-        this._method = 'GET';
-        this._body = null;
-        this._returning = false;
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>جهاز POS – انتظار الطباعة</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&display=swap');
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:      #0f1117;
+      --surface: #1a1d27;
+      --border:  #2a2d3e;
+      --accent:  #f97316;
+      --text:    #e8eaf0;
+      --muted:   #6b7280;
+      --green:   #22c55e;
+      --yellow:  #eab308;
     }
-    QueryBuilder.prototype.select = function (cols) {
-        this._select = cols || '*';
-        if (this._method === 'GET') this._method = 'GET';
-        else this._returning = true;
-        return this;
-    };
-    QueryBuilder.prototype.eq = function (col, val) { this._filters.push(col + '=eq.' + encodeURIComponent(val)); return this; };
-    QueryBuilder.prototype.neq = function (col, val) { this._filters.push(col + '=neq.' + encodeURIComponent(val)); return this; };
-    QueryBuilder.prototype.gte = function (col, val) { this._filters.push(col + '=gte.' + encodeURIComponent(val)); return this; };
-    QueryBuilder.prototype.lte = function (col, val) { this._filters.push(col + '=lte.' + encodeURIComponent(val)); return this; };
-    QueryBuilder.prototype.ilike = function (col, val) { this._filters.push(col + '=ilike.' + encodeURIComponent(val)); return this; };
-    QueryBuilder.prototype['in'] = function (col, arr) {
-        var vals = [];
-        for (var i = 0; i < arr.length; i++) vals.push(arr[i]);
-        this._filters.push(col + '=in.(' + vals.join(',') + ')');
-        return this;
-    };
-    QueryBuilder.prototype.order = function (col, opts) {
-        var asc = true;
-        if (opts && opts.ascending === false) asc = false;
-        this._order = col + '.' + (asc ? 'asc' : 'desc');
-        return this;
-    };
-    QueryBuilder.prototype.limit = function (n) { this._limit = n; return this; };
-    QueryBuilder.prototype.single = function () { this._single = true; return this; };
-    QueryBuilder.prototype.maybeSingle = function () { this._maybeSingle = true; return this; };
-    QueryBuilder.prototype.insert = function (rows) {
-        this._method = 'POST';
-        this._body = rows;
-        return this;
-    };
-    QueryBuilder.prototype.update = function (obj) {
-        this._method = 'PATCH';
-        this._body = obj;
-        return this;
-    };
-    QueryBuilder.prototype.upsert = function (rows, opts) {
-        this._method = 'POST';
-        this._body = rows;
-        this._upsert = true;
-        this._onConflict = opts && opts.onConflict;
-        return this;
-    };
-    QueryBuilder.prototype['delete'] = function () {
-        this._method = 'DELETE';
-        return this;
-    };
-    QueryBuilder.prototype._buildUrl = function () {
-        var url = baseUrl + '/rest/v1/' + this._table + '?select=' + encodeURIComponent(this._select);
-        for (var i = 0; i < this._filters.length; i++) url += '&' + this._filters[i];
-        if (this._order) url += '&order=' + this._order;
-        if (this._limit !== null) url += '&limit=' + this._limit;
-        return url;
-    };
-    QueryBuilder.prototype.then = function (resolve, reject) {
-        var self = this;
-        var xhr = new XMLHttpRequest();
-        var url = self._buildUrl();
-        xhr.open(self._method, url, true);
-        xhr.setRequestHeader('apikey', apiKey);
-        xhr.setRequestHeader('Authorization', 'Bearer ' + apiKey);
-        xhr.setRequestHeader('Content-Type', 'application/json');
-        if (self._single) xhr.setRequestHeader('Accept', 'application/vnd.pgrst.object+json');
-        if (self._method !== 'GET' && self._method !== 'DELETE') {
-            xhr.setRequestHeader('Prefer', self._upsert ? 'resolution=merge-duplicates,return=representation' : 'return=representation');
-            if (self._upsert && self._onConflict) {
-                url = url.replace(self._table, self._table); // on_conflict param appended below
-                xhr.open(self._method, self._buildUrl() + '&on_conflict=' + encodeURIComponent(self._onConflict), true);
-                xhr.setRequestHeader('apikey', apiKey);
-                xhr.setRequestHeader('Authorization', 'Bearer ' + apiKey);
-                xhr.setRequestHeader('Content-Type', 'application/json');
-                xhr.setRequestHeader('Prefer', 'resolution=merge-duplicates,return=representation');
-            }
-        } else if (self._method === 'DELETE') {
-            xhr.setRequestHeader('Prefer', 'return=representation');
-        }
-        xhr.onreadystatechange = function () {
-            if (xhr.readyState !== 4) return;
-            var result = { data: null, error: null };
-            try {
-                var parsed = xhr.responseText ? JSON.parse(xhr.responseText) : null;
-                if (xhr.status >= 200 && xhr.status < 300) {
-                    if (self._single || self._maybeSingle) {
-                        if (Array.isArray(parsed)) result.data = parsed.length > 0 ? parsed[0] : null;
-                        else result.data = parsed;
-                    } else {
-                        result.data = parsed;
-                    }
-                } else {
-                    result.error = parsed || { message: 'HTTP ' + xhr.status };
-                }
-            } catch (e) {
-                if (xhr.status >= 200 && xhr.status < 300) result.data = null;
-                else result.error = { message: 'Request failed: ' + xhr.status };
-            }
-            resolve(result);
-        };
-        xhr.onerror = function () {
-            resolve({ data: null, error: { message: 'Network error — تعذّر الوصول للخادم' } });
-        };
-        if (self._body !== null && self._method !== 'GET' && self._method !== 'DELETE') {
-            xhr.send(JSON.stringify(self._body));
-        } else {
-            xhr.send();
-        }
-    };
 
-    // ===== [SH-MINIMAL-CLIENT] طبقة توافق وهمية للقنوات اللحظية (Realtime) =====
-    // التطبيق يحتوي أصلاً على استطلاع دوري (Polling) كافٍ كاحتياط لكل ميزة تستخدم القنوات اللحظية،
-    // فهذه دوال وهمية غير فعّالة (No-op) لا تكسر الكود الذي يستدعيها، لكنها لا تتصل بأي خادم WebSocket
-    function DummyChannel() {}
-    DummyChannel.prototype.on = function () { return this; };
-    DummyChannel.prototype.subscribe = function () { return this; };
+    body {
+      font-family: 'IBM Plex Sans Arabic', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem 1rem;
+    }
 
-    return {
-        from: function (table) { return new QueryBuilder(table); },
-        channel: function () { return new DummyChannel(); },
-        removeChannel: function () {}
-    };
-}
-window.createMinimalSupabaseClient = createMinimalSupabaseClient;
+    /* ── Pulse ring ── */
+    .pulse-wrap {
+      position: relative;
+      width: 90px; height: 90px;
+      margin-bottom: 2rem;
+    }
+    .pulse-ring {
+      position: absolute; inset: 0;
+      border-radius: 50%;
+      background: rgba(249,115,22,.15);
+      animation: pulse 2s ease-out infinite;
+    }
+    .pulse-ring:nth-child(2) { animation-delay: .7s; }
+    @keyframes pulse {
+      0%   { transform: scale(.7); opacity: .8; }
+      100% { transform: scale(1.5); opacity: 0; }
+    }
+    .pulse-icon {
+      position: absolute; inset: 0;
+      background: var(--accent);
+      border-radius: 50%;
+      display: grid; place-items: center;
+      font-size: 2rem;
+      z-index: 1;
+    }
 
-    </script>
-    <!-- ===== [POS-PRINT] مكتبة QZ Tray للتواصل مع وكيل الطباعة المحلي ===== -->
-    <!-- ===== [POS-PRINT] مكتبة QZ Tray محلياً (لا تحتاج تحويل، لكن استبعدنا أي اعتماد خارجي تماماً) ===== -->
-    <script src="qz-tray.js" onload="window._qzScriptLoaded=true;" onerror="window._qzScriptLoaded=false;"></script>
-    <style>
-        :root {
-            --gold: #d4af37; --gold-l: #f1d279;
-            --p-dark: #0a010a; --p-main: #1d051d;
-            --glass: rgba(255,255,255,0.05);
-            --success: #27ae60; --danger: #e74c3c; --info: #3498db;
-        }
-        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; transition: background 0.2s; }
-        body { margin: 0; background: radial-gradient(circle, var(--p-main), var(--p-dark)); color: #fff; font-family: -apple-system, sans-serif; min-height: 100vh; overflow-x: hidden; }
+    h1 { font-size: 1.4rem; font-weight: 700; margin-bottom: .5rem; text-align: center; }
+    .subtitle { font-size: .9rem; color: var(--muted); text-align: center; margin-bottom: 2.5rem; }
 
-        /* ===== شاشة الدخول ===== */
-        .auth-overlay { position: fixed; inset: 0; background: var(--p-dark); z-index: 9000; display: flex; align-items: center; justify-content: center; padding: 20px; }
-        .auth-card { background: rgba(255,255,255,0.04); backdrop-filter: blur(10px); padding: 35px; border-radius: 24px; border: 1px solid var(--gold); width: 100%; max-width: 380px; text-align: center; }
-        .auth-card img { width: 75px; border-radius: 18px; margin-bottom: 15px; border: 2px solid var(--gold); }
-        .inp { width: 100%; padding: 14px; margin-bottom: 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.12); border-radius: 12px; color: #fff; text-align: center; outline: none; font-size: 14px; }
-        .inp:focus { border-color: var(--gold); }
-        .btn-login { width: 100%; padding: 14px; background: var(--gold); border: none; border-radius: 12px; font-weight: bold; cursor: pointer; font-size: 15px; }
+    /* ── Status badge ── */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: .5rem;
+      padding: .4rem 1rem;
+      border-radius: 50px;
+      font-size: .8rem;
+      font-weight: 600;
+      border: 1px solid;
+    }
+    .badge.waiting  { color: var(--yellow); border-color: #5a4a00; background: #1c1700; }
+    .badge.printing { color: var(--green);  border-color: #0a4020; background: #061510; }
+    .badge.connected{ color: var(--green);  border-color: #0a4020; background: #061510; }
 
-        /* ===== هيدر ===== */
-        .app-header { padding: 12px 18px; background: rgba(0,0,0,0.5); backdrop-filter: blur(8px); display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(212,175,55,0.25); position: sticky; top: 0; z-index: 100; }
-        .header-info .res-name { font-weight: bold; color: var(--gold); font-size: 16px; }
-        .header-info .res-sub  { font-size: 11px; opacity: 0.65; margin-top: 2px; }
-        .header-btns { display: flex; gap: 8px; align-items: center; }
-        .hbtn { background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.12); color: #fff; width: 36px; height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 14px; }
-        .hbtn:active { background: var(--gold); color: #000; }
+    .dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: currentColor;
+    }
+    .dot.blink { animation: blink 1s step-start infinite; }
+    @keyframes blink { 50% { opacity: 0; } }
 
-        /* ===== شريط التحميل ===== */
-        .sync-bar { position: fixed; top: 0; left: 0; height: 3px; background: var(--gold); z-index: 9999; transition: width 0.1s linear; }
+    /* ── Log ── */
+    .log {
+      margin-top: 2rem;
+      width: 100%; max-width: 420px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1rem;
+      font-size: .78rem;
+      color: var(--muted);
+      max-height: 220px;
+      overflow-y: auto;
+    }
+    .log-entry { padding: .25rem 0; border-bottom: 1px solid var(--border); }
+    .log-entry:last-child { border: none; }
+    .log-entry .time { color: var(--accent); font-size: .7rem; margin-left: .5rem; }
 
-        /* ===== التبويبات الرئيسية ===== */
-        .tab-bar { display: flex; background: rgba(0,0,0,0.4); border-bottom: 1px solid rgba(255,255,255,0.08); position: sticky; top: 60px; z-index: 99; }
-        .tab-btn { flex: 1; padding: 12px 8px; text-align: center; cursor: pointer; font-size: 12px; color: #aaa; border-bottom: 3px solid transparent; transition: 0.2s; position: relative; }
-        .tab-btn.active { color: var(--gold); border-bottom-color: var(--gold); background: rgba(212,175,55,0.06); }
-        .tab-btn i { display: block; font-size: 17px; margin-bottom: 3px; }
-        .tab-badge { position: absolute; top: 6px; right: 18%; background: var(--danger); color: #fff; font-size: 9px; min-width: 16px; height: 16px; border-radius: 8px; display: none; align-items: center; justify-content: center; font-weight: bold; }
+    /* ── Hidden receipt for printing ── */
+    #receipt {
+      display: none;
+    }
 
-        /* ===== صفحات ===== */
-        .page { display: none; padding: 15px 15px 100px; }
-        .page.active { display: block; }
+    /* ══════════════════════════════════
+       PRINT STYLES  –  Thermal 80mm
+       ══════════════════════════════════ */
+    @media print {
+      body > *:not(#receipt) { display: none !important; }
 
-        /* ===== إحصاءات ===== */
-        .stats-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 15px; }
-        .stat-card { background: var(--glass); padding: 12px; border-radius: 14px; border-right: 3px solid var(--gold); text-align: center; cursor: pointer; }
-        .stat-card .sv { font-size: 20px; font-weight: bold; color: var(--gold); margin-top: 4px; }
-        .stat-card .sl { font-size: 10px; opacity: 0.65; }
+      #receipt {
+        display: block !important;
+        width: 72mm;
+        font-family: 'Courier New', Courier, monospace;
+        font-size: 12px;
+        color: #000;
+        background: #fff;
+        padding: 4mm;
+        direction: rtl;
+      }
 
-        /* ===== بطاقات الطلبات ===== */
-        .orders-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 12px; }
-        .order-card { background: rgba(255,255,255,0.04); border-radius: 16px; padding: 14px; border: 1px solid rgba(255,255,255,0.1); }
-        .order-card.new-order  { border-color: var(--gold); box-shadow: 0 0 12px rgba(212,175,55,0.2); }
-        .order-card.in-progress { border-color: var(--info); }
-        .order-card.chat-order  { border-color: #e91e8c; }
-        .oc-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-        .oc-id  { font-size: 10px; opacity: 0.5; }
-        .oc-time { font-size: 10px; opacity: 0.5; }
-        .oc-name { font-weight: bold; font-size: 15px; margin-bottom: 6px; }
-        .oc-items { font-size: 11px; color: #bbb; margin-bottom: 8px; line-height: 1.6; }
-        .oc-total { background: rgba(212,175,55,0.1); border: 1px dashed var(--gold); border-radius: 8px; padding: 7px 12px; text-align: center; font-size: 13px; margin-bottom: 10px; }
-        .oc-total b { color: var(--gold); }
-        .oc-driver { background: rgba(39,174,96,0.1); color: #2ecc71; padding: 6px 10px; border-radius: 8px; font-size: 12px; margin-bottom: 8px; }
-        .oc-prep { background: rgba(212,175,55,0.1); color: var(--gold); padding: 5px 10px; border-radius: 8px; font-size: 11px; text-align: center; margin-bottom: 8px; }
-        .status-label { display: inline-block; padding: 3px 10px; border-radius: 10px; font-size: 11px; font-weight: bold; margin-bottom: 8px; }
-        .sl-new      { background: rgba(212,175,55,0.15); color: var(--gold); }
-        .sl-accepted { background: rgba(52,152,219,0.15); color: #3498db; }
-        .sl-preparing { background: rgba(241,196,15,0.15); color: #f1c40f; }
-        .sl-ready    { background: rgba(46,204,113,0.15); color: #2ecc71; }
-        .sl-picked   { background: rgba(155,89,182,0.15); color: #9b59b6; }
-        .sl-chat     { background: rgba(233,30,140,0.15); color: #e91e8c; }
-
-        /* ===== أزرار الحالة ===== */
-        .status-btns { display: flex; flex-direction: column; gap: 6px; }
-        .sbtn { padding: 10px 14px; border-radius: 10px; border: none; font-weight: bold; cursor: pointer; font-size: 12px; width: 100%; text-align: center; transition: 0.15s; }
-        .sbtn:active { transform: scale(0.97); opacity: 0.85; }
-        .sbtn-accept   { background: rgba(52,152,219,0.18); color: #3498db; border: 1px solid #3498db; }
-        .sbtn-prep     { background: rgba(241,196,15,0.18); color: #f1c40f; border: 1px solid #f1c40f; }
-        .sbtn-ready    { background: rgba(46,204,113,0.18); color: #2ecc71; border: 1px solid #2ecc71; }
-        .sbtn-sent     { background: rgba(155,89,182,0.18); color: #9b59b6; border: 1px solid #9b59b6; }
-        .sbtn-chat     { background: linear-gradient(135deg,#e91e8c,#c2185b); color: #fff; border: none; }
-        .sbtn-reject   { background: rgba(231,76,60,0.15); color: var(--danger); border: 1px solid var(--danger); }
-        .sbtn-used     { opacity: 0.3; text-decoration: line-through; pointer-events: none; }
-
-        /* ===== شاشة الدردشة ===== */
-        #chat-screen { display: none; position: fixed; inset: 0; background: var(--p-dark); z-index: 500; flex-direction: column; }
-        .chat-hdr { padding: 14px 18px; background: rgba(0,0,0,0.6); display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(212,175,55,0.3); flex-shrink: 0; }
-        .chat-hdr-info .chat-cname { font-weight: bold; font-size: 15px; color: var(--gold); }
-        .chat-hdr-info .chat-oid   { font-size: 10px; opacity: 0.55; margin-top: 2px; }
-        .chat-msgs { flex: 1; overflow-y: auto; padding: 15px; display: flex; flex-direction: column; gap: 10px; }
-        .cmsg-wrap { display: flex; flex-direction: column; }
-        .cmsg-wrap.store  { align-items: flex-end; }
-        .cmsg-wrap.client { align-items: flex-start; }
-        .cmsg { max-width: 80%; padding: 10px 14px; border-radius: 14px; font-size: 13px; word-break: break-word; line-height: 1.5; }
-        .cmsg.store  { background: var(--gold); color: #000; border-bottom-right-radius: 2px; }
-        .cmsg.client { background: #2a2a2a; color: #fff; border-bottom-left-radius: 2px; }
-        .cmsg-time   { font-size: 9px; opacity: 0.55; margin-top: 2px; }
-        .chat-inp-row { padding: 12px 15px; display: flex; gap: 10px; background: rgba(0,0,0,0.4); border-top: 1px solid rgba(255,255,255,0.08); flex-shrink: 0; }
-        .chat-inp-row input { flex: 1; padding: 12px; background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.12); border-radius: 12px; color: #fff; outline: none; font-size: 13px; }
-        .chat-inp-row input:focus { border-color: var(--gold); }
-        .btn-send-msg { background: var(--gold); border: none; border-radius: 12px; width: 46px; color: #000; cursor: pointer; font-size: 15px; flex-shrink: 0; }
-        .chat-actions { padding: 10px 15px 18px; display: flex; gap: 10px; flex-shrink: 0; }
-        .btn-invoice  { flex: 2; background: var(--success); color: #fff; border: none; border-radius: 12px; padding: 13px; font-weight: bold; cursor: pointer; font-size: 13px; }
-        .btn-cancel-c { flex: 1; background: rgba(231,76,60,0.15); color: var(--danger); border: 1px solid var(--danger); border-radius: 12px; padding: 13px; font-weight: bold; cursor: pointer; font-size: 12px; }
-
-        /* ===== مودال الفاتورة ===== */
-        #invoice-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 600; align-items: center; justify-content: center; padding: 20px; }
-        .inv-card { background: var(--p-main); border: 2px solid var(--gold); border-radius: 20px; padding: 22px; width: 100%; max-width: 400px; }
-        .inv-card textarea { width: 100%; height: 130px; background: rgba(255,255,255,0.05); color: #fff; border: 1px solid rgba(255,255,255,0.15); border-radius: 10px; padding: 10px; resize: none; font-size: 13px; font-family: inherit; margin: 10px 0; }
-        .inv-total-box { background: rgba(212,175,55,0.1); border: 1px dashed var(--gold); border-radius: 10px; padding: 10px; text-align: center; margin-bottom: 14px; }
-        .inv-btns { display: flex; gap: 10px; }
-
-        /* ===== تبويبات صفحة التواصل ===== */
-        .chat-list-item { background: var(--glass); border-radius: 14px; padding: 14px; margin-bottom: 10px; border: 1px solid rgba(212,175,55,0.2); cursor: pointer; display: flex; justify-content: space-between; align-items: center; transition: 0.2s; }
-        .chat-list-item:hover { border-color: var(--gold); background: rgba(212,175,55,0.05); }
-        .chat-list-item .cli-name { font-weight: bold; font-size: 14px; }
-        .chat-list-item .cli-sub  { font-size: 11px; opacity: 0.6; margin-top: 3px; }
-        .chat-list-item .cli-badge { background: #e91e8c; color: #fff; font-size: 10px; padding: 3px 8px; border-radius: 10px; font-weight: bold; }
-        .empty-state { text-align: center; padding: 50px 20px; opacity: 0.35; }
-        .empty-state i { font-size: 40px; display: block; margin-bottom: 10px; }
-
-        /* ===== إدارة المنيو ===== */
-        .menu-section { background: var(--glass); border-radius: 14px; padding: 14px; margin-bottom: 12px; border: 1px solid rgba(255,255,255,0.08); }
-        .menu-section-title { color: var(--gold); font-weight: bold; font-size: 14px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
-        .menu-item-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 13px; }
-        .menu-item-row:last-child { border-bottom: none; }
-        .menu-item-price { color: var(--gold); font-weight: bold; }
-        .menu-item-avail { font-size: 10px; padding: 2px 8px; border-radius: 8px; cursor: pointer; }
-        .avail-yes { background: rgba(46,204,113,0.2); color: #2ecc71; }
-        .avail-no  { background: rgba(231,76,60,0.2); color: var(--danger); }
-        .add-item-form { background: rgba(212,175,55,0.06); border: 1px dashed var(--gold); border-radius: 12px; padding: 12px; margin-top: 10px; }
-        .add-item-form input { margin-bottom: 8px; }
-        .add-item-form input:last-of-type { margin-bottom: 0; }
-        .fi { width: 100%; padding: 10px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); border-radius: 10px; color: #fff; outline: none; font-size: 13px; }
-        .fi:focus { border-color: var(--gold); }
-
-        /* ===== إعدادات المطعم ===== */
-        .settings-row { background: var(--glass); border-radius: 12px; padding: 14px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; border: 1px solid rgba(255,255,255,0.06); }
-        .settings-label { font-size: 13px; }
-        .settings-label small { display: block; font-size: 10px; opacity: 0.55; margin-top: 2px; }
-        .toggle-switch { position: relative; width: 46px; height: 24px; flex-shrink: 0; }
-        .toggle-switch input { opacity: 0; width: 0; height: 0; }
-        .toggle-slider { position: absolute; inset: 0; background: #444; border-radius: 24px; cursor: pointer; transition: 0.3s; }
-        .toggle-slider:before { content: ''; position: absolute; width: 18px; height: 18px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: 0.3s; }
-        .toggle-switch input:checked + .toggle-slider { background: var(--gold); }
-        .toggle-switch input:checked + .toggle-slider:before { transform: translateX(22px); }
-
-        /* ===== أرشيف ===== */
-        .arch-item { background: var(--glass); border-radius: 12px; padding: 12px; margin-bottom: 8px; border-right: 3px solid var(--gold); }
-        .arch-item .ai-name { font-weight: bold; font-size: 13px; }
-        .arch-item .ai-detail { font-size: 11px; color: var(--gold); white-space: pre-line; margin-top: 4px; opacity: 0.85; }
-        .arch-item .ai-time { font-size: 10px; opacity: 0.5; margin-top: 3px; }
-
-        /* ===== Toast ===== */
-        #toast { position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%); background: var(--gold); color: #000; padding: 10px 22px; border-radius: 20px; font-size: 13px; font-weight: bold; display: none; z-index: 9998; white-space: nowrap; }
-
-        @keyframes pulse { 0%{opacity:.8} 50%{opacity:1} 100%{opacity:.8} }
-        .pulse { animation: pulse 2s infinite; }
-    </style>
+      .r-header { text-align: center; margin-bottom: 6px; }
+      .r-logo   { font-size: 16px; font-weight: bold; }
+      .r-sub    { font-size: 10px; }
+      .r-divider{ border-top: 1px dashed #000; margin: 5px 0; }
+      .r-row    { display: flex; justify-content: space-between; font-size: 11px; margin: 2px 0; }
+      .r-label  { color: #444; }
+      .r-items-header {
+        display: flex; justify-content: space-between;
+        font-size: 10px; font-weight: bold;
+        border-bottom: 1px solid #000; padding-bottom: 2px; margin-bottom: 4px;
+      }
+      .r-item {
+        display: flex; justify-content: space-between; font-size: 11px; margin: 2px 0;
+      }
+      .r-item-name { flex: 2; }
+      .r-item-qty  { text-align: center; flex: 1; }
+      .r-item-price{ text-align: left; flex: 1; }
+      .r-total     { font-size: 14px; font-weight: bold; text-align: center; margin: 6px 0; }
+      .r-footer    { text-align: center; font-size: 10px; margin-top: 6px; }
+      .r-notes     { font-size: 10px; padding: 4px; border: 1px dashed #ccc; margin: 4px 0; }
+    }
+  </style>
 </head>
-<body onclick="initAudio()">
+<body>
 
-<div class="sync-bar" id="sync-bar"></div>
-<div id="toast"></div>
+  <div class="pulse-wrap">
+    <div class="pulse-ring"></div>
+    <div class="pulse-ring"></div>
+    <div class="pulse-icon">🖨️</div>
+  </div>
 
-<!-- ===== شاشة الدخول ===== -->
-<div id="auth-screen" class="auth-overlay">
-    <div class="auth-card">
-        <img src="https://i.postimg.cc/QxzPkmPf/Whats-App-Image-2026-04-10-at-6-22-30-PM-t7edrz.jpg">
-        <h2 style="color:var(--gold); margin:0 0 5px;">بوابة المطعم 🦅</h2>
-        <p style="font-size:11px; opacity:0.6; margin:0 0 20px;">شاهين إكسبريس</p>
-        <input class="inp" type="email" id="login-email" placeholder="البريد الإلكتروني">
-        <input class="inp" type="password" id="login-code" placeholder="كود التفعيل">
-        <button class="btn-login" onclick="checkAuth()"><i class="fas fa-sign-in-alt"></i> دخول</button>
-        <!-- ===== [FIX-WEBVIEW-LOGIN] سجل تشخيص ظاهر مباشرة على الجهاز — يفيد عند التشغيل داخل تطبيق
-             أندرويد (WebView) حيث لا تتوفر أدوات مطوّر سطح المكتب لرؤية الأخطاء ===== -->
-        <details style="margin-top:14px; text-align:right;">
-            <summary style="font-size:10px; color:#888; cursor:pointer;">🔧 سجل التشخيص (اضغط هنا عند وجود مشكلة)</summary>
-            <pre id="sh-debug-panel" style="background:rgba(0,0,0,0.4); color:#0f0; font-size:9px; padding:8px; border-radius:6px; max-height:140px; overflow-y:auto; white-space:pre-wrap; direction:ltr; text-align:left; margin-top:6px;">جاري التحميل...</pre>
-        </details>
-    </div>
-</div>
+  <h1>جهاز POS</h1>
+  <p class="subtitle">هذه الصفحة تنتظر أوامر الطباعة تلقائيًا</p>
 
-<!-- ===== شاشة الدردشة (تطفو فوق كل شيء) ===== -->
-<div id="chat-screen">
-    <div class="chat-hdr">
-        <div class="chat-hdr-info">
-            <div class="chat-cname" id="chat-cname">...</div>
-            <div class="chat-oid"   id="chat-oid">...</div>
-        </div>
-        <button onclick="closeChat()" style="background:none;border:none;color:#fff;font-size:22px;cursor:pointer;"><i class="fas fa-times"></i></button>
-    </div>
-    <div class="chat-msgs" id="chat-flow"></div>
-    <div class="chat-inp-row">
-        <input type="text" id="chat-input" placeholder="اكتب ردك..." onkeydown="if(event.key==='Enter')sendMsg()">
-        <button class="btn-send-msg" onclick="sendMsg()"><i class="fas fa-paper-plane"></i></button>
-    </div>
-    <div class="chat-actions">
-        <button class="btn-invoice" onclick="showInvoiceBox()"><i class="fas fa-file-invoice"></i> إرسال الفاتورة للعميل</button>
-        <button class="btn-cancel-c" onclick="cancelDueToNoResponse()"><i class="fas fa-times-circle"></i> إلغاء</button>
-    </div>
-</div>
+  <div id="statusBadge" class="badge waiting">
+    <div class="dot blink"></div>
+    جاري الاتصال…
+  </div>
 
-<!-- ===== مودال الفاتورة ===== -->
-<div id="invoice-modal">
-    <div class="inv-card">
-        <h3 style="color:var(--gold);margin:0 0 8px;font-size:16px;"><i class="fas fa-receipt"></i> تحديد الأصناف والأسعار</h3>
-        <p style="font-size:11px;opacity:0.7;margin:0 0 5px;">اكتب الصنف وبجانبه السعر — يُجمع تلقائياً</p>
-        <textarea id="inv-items" placeholder="مثال:&#10;وجبة دجاج 25000&#10;مشروب 5000&#10;حلى 8000" oninput="calcInvoiceTotal()"></textarea>
-        <div class="inv-total-box">
-            <span style="font-size:12px;opacity:0.8;">الإجمالي:</span><br>
-            <b id="inv-total" style="font-size:22px;color:var(--gold);">0</b> <small>ل.س</small>
-        </div>
-        <div class="inv-btns">
-            <button onclick="sendInvoice()" class="btn-login" style="flex:2;"><i class="fas fa-check"></i> تأكيد وإرسال</button>
-            <button onclick="document.getElementById('invoice-modal').style.display='none'" style="flex:1;background:rgba(255,255,255,0.07);color:#fff;border:1px solid #555;border-radius:12px;cursor:pointer;padding:14px;">إلغاء</button>
-        </div>
-    </div>
-</div>
+  <div class="log" id="log">
+    <div class="log-entry"><span class="time">--:--</span>بدء تشغيل الصفحة…</div>
+  </div>
 
-<!-- ===== المحتوى الرئيسي ===== -->
-<div id="main-content" style="display:none;">
-    <div class="app-header">
-        <div class="header-info">
-            <div class="res-name" id="display-res-name">...</div>
-            <div class="res-sub"  id="display-res-sub">...</div>
-        </div>
-        <div class="header-btns">
-            <div class="hbtn pulse" id="notif-bell" style="color:var(--gold); display:none;" title="طلبات جديدة"><i class="fas fa-bell"></i></div>
-            <div class="hbtn" onclick="logout()" style="color:var(--danger);"><i class="fas fa-power-off"></i></div>
-        </div>
-    </div>
+  <!-- الإيصال المخفي (يُطبع فقط عند الأمر) -->
+  <div id="receipt"></div>
 
-    <!-- تبويبات -->
-    <div class="tab-bar">
-        <div class="tab-btn active" id="tab-orders" onclick="switchTab('orders')">
-            <i class="fas fa-receipt"></i>الطلبات
-            <span class="tab-badge" id="badge-orders"></span>
-        </div>
-        <div class="tab-btn" id="tab-chat" onclick="switchTab('chat')">
-            <i class="fas fa-comments"></i>التواصل
-            <span class="tab-badge" id="badge-chat"></span>
-        </div>
-        <div class="tab-btn" id="tab-menu" onclick="switchTab('menu')">
-            <i class="fas fa-utensils"></i>المنيو
-        </div>
-        <div class="tab-btn" id="tab-archive" onclick="switchTab('archive')">
-            <i class="fas fa-archive"></i>الأرشيف
-        </div>
-        <div class="tab-btn" id="tab-settings" onclick="switchTab('settings')">
-            <i class="fas fa-cog"></i>إعدادات
-        </div>
-    </div>
+<!-- Firebase SDK -->
+<script type="module">
+  import { initializeApp }  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getDatabase, ref, onValue }
+    from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
-    <!-- ===== صفحة الطلبات ===== -->
-    <div class="page active" id="page-orders">
-        <div class="stats-row">
-            <div class="stat-card" onclick="switchTab('archive')">
-                <div class="sl">مكتملة اليوم</div>
-                <div class="sv" id="stat-done">0</div>
-            </div>
-            <div class="stat-card">
-                <div class="sl">نشطة الآن</div>
-                <div class="sv" id="stat-active" style="color:#3498db;">0</div>
-            </div>
-            <div class="stat-card" onclick="switchTab('archive')">
-                <div class="sl">أرباح اليوم</div>
-                <div class="sv" id="stat-profit" style="font-size:13px;">0</div>
-            </div>
-        </div>
-        <div style="padding:0 2px 12px; display:flex; gap:8px;">
-            <input type="text" class="fi" id="orders-search" placeholder="🔍 ابحث باسم العميل أو رقم الطلب..." oninput="filterAndRenderOrders()" style="margin:0;">
-        </div>
-        <div class="orders-grid" id="orders-list">
-            <div class="empty-state"><i class="fas fa-check-circle"></i><p>لا توجد طلبات نشطة</p></div>
-        </div>
-    </div>
+  // ══════════════════════════════════════════════
+  //  🔧 نفس إعدادات Firebase الخاصة بك هنا أيضاً
+  // ══════════════════════════════════════════════
+  const firebaseConfig = {
+    apiKey:            "REPLACE_WITH_YOUR_API_KEY",
+    authDomain:        "REPLACE_WITH_YOUR_AUTH_DOMAIN",
+    databaseURL:       "REPLACE_WITH_YOUR_DATABASE_URL",
+    projectId:         "REPLACE_WITH_YOUR_PROJECT_ID",
+    storageBucket:     "REPLACE_WITH_YOUR_STORAGE_BUCKET",
+    messagingSenderId: "REPLACE_WITH_YOUR_MESSAGING_SENDER_ID",
+    appId:             "REPLACE_WITH_YOUR_APP_ID"
+  };
 
-    <!-- ===== صفحة التواصل ===== -->
-    <div class="page" id="page-chat">
-        <div id="chat-disabled-notice" style="display:none; background:rgba(231,76,60,0.1); border:1px solid var(--danger); border-radius:12px; padding:18px; text-align:center; margin-bottom:15px;">
-            <i class="fas fa-lock" style="font-size:24px; color:var(--danger); margin-bottom:8px; display:block;"></i>
-            <b style="color:var(--danger);">التواصل المباشر معطّل</b><br>
-            <small style="opacity:0.7;">يمكن تفعيله من قسم الإعدادات أو من لوحة الإدارة</small>
-        </div>
-        <div id="chat-orders-list"></div>
-    </div>
+  const app = initializeApp(firebaseConfig);
+  const db  = getDatabase(app);
 
-    <!-- ===== صفحة المنيو ===== -->
-    <div class="page" id="page-menu">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
-            <h3 style="color:var(--gold); margin:0; font-size:16px;"><i class="fas fa-utensils"></i> إدارة المنيو</h3>
-            <button onclick="showAddSectionForm()" class="btn-login" style="width:auto; padding:8px 16px; font-size:12px;"><i class="fas fa-plus"></i> قسم جديد</button>
-        </div>
-        <div id="add-section-form" style="display:none; background:rgba(212,175,55,0.06); border:1px dashed var(--gold); border-radius:12px; padding:12px; margin-bottom:14px;">
-            <input class="fi" id="new-sec-name" placeholder="اسم القسم (مثال: وجبات رئيسية)" style="margin-bottom:8px;">
-            <input class="fi" id="new-sec-icon" placeholder="أيقونة (اختياري: 🍽️)" style="margin-bottom:8px;" value="🍽️">
-            <div style="display:flex; gap:8px;">
-                <button onclick="addMenuSection()" class="btn-login" style="flex:1; padding:10px; font-size:12px;"><i class="fas fa-check"></i> إضافة</button>
-                <button onclick="document.getElementById('add-section-form').style.display='none'" style="flex:1; padding:10px; background:rgba(255,255,255,0.07); color:#fff; border:1px solid #555; border-radius:10px; cursor:pointer; font-size:12px;">إلغاء</button>
-            </div>
-        </div>
-        <div id="menu-sections-container"></div>
-    </div>
+  let lastTimestamp = null;   // نتجاهل أحداث "القيمة الأولى" عند فتح الصفحة
 
-    <!-- ===== صفحة الأرشيف ===== -->
-    <div class="page" id="page-archive">
-        <h3 style="color:var(--gold); margin:0 0 14px; font-size:16px;"><i class="fas fa-archive"></i> الأرشيف والسابقة</h3>
-        <div id="archive-list">
-            <div class="empty-state"><i class="fas fa-box-open"></i><p>لا توجد طلبات مكتملة بعد</p></div>
-        </div>
-    </div>
+  const badge = document.getElementById('statusBadge');
 
-    <!-- ===== صفحة الإعدادات ===== -->
-    <div class="page" id="page-settings">
-        <h3 style="color:var(--gold); margin:0 0 14px; font-size:16px;"><i class="fas fa-cog"></i> إعدادات المطعم</h3>
+  // ─── عند الاتصال بنجاح ───
+  badge.className   = 'badge connected';
+  badge.innerHTML   = '<div class="dot"></div> متصل – ينتظر الطباعة';
+  addLog('Firebase متصل ✓');
 
-        <div class="settings-row">
-            <div class="settings-label">
-                💬 التواصل المباشر مع العملاء
-                <small>تفعيل الدردشة في قسم التواصل</small>
-            </div>
-            <label class="toggle-switch">
-                <input type="checkbox" id="toggle-chat" onchange="saveLocalSetting('chat_enabled', this.checked)">
-                <span class="toggle-slider"></span>
-            </label>
-        </div>
+  // ─── الاستماع لـ print_job ───
+  onValue(ref(db, 'print_job'), (snapshot) => {
+    const job = snapshot.val();
+    if (!job) return;
 
-        <div class="settings-row">
-            <div class="settings-label">
-                ⏱️ مدة التجهيز التقريبية
-                <small>تظهر للعميل في الطلب</small>
-            </div>
-            <div style="display:flex; align-items:center; gap:8px;">
-                <input type="number" id="prep-time-val" class="fi" style="width:70px; margin:0; text-align:center; padding:8px;" min="0" max="240" onchange="saveLocalSetting('prep_time', this.value)">
-                <span style="font-size:12px; opacity:0.6;">دقيقة</span>
-            </div>
-        </div>
-
-        <div class="settings-row">
-            <div class="settings-label">
-                🔔 صوت الإشعارات
-                <small>تشغيل صوت عند وصول طلب جديد</small>
-            </div>
-            <label class="toggle-switch">
-                <input type="checkbox" id="toggle-sound" checked onchange="saveLocalSetting('sound_enabled', this.checked)">
-                <span class="toggle-slider"></span>
-            </label>
-        </div>
-
-        <!-- ===== [POS-PRINT] إعدادات الطابعة الحرارية لهذا الجهاز ===== -->
-        <div style="background:rgba(52,152,219,0.06); border:1px solid #3498db; border-radius:14px; padding:15px; margin-top:14px;">
-            <p style="font-size:13px; color:#3498db; font-weight:bold; margin:0 0 10px;"><i class="fas fa-print"></i> الطابعة الحرارية لهذا الجهاز</p>
-            <div id="pos-status-badge" style="display:inline-block; border:1px solid #888; border-radius:20px; padding:6px 14px; font-size:11.5px; font-weight:bold; margin-bottom:12px;">
-                <i class="fas fa-spinner fa-spin"></i> جاري الفحص...
-            </div>
-            <div style="margin-bottom:10px;">
-                <label style="font-size:11px; opacity:0.75; display:block; margin-bottom:5px;">الطابعة المكتشفة على هذا الجهاز</label>
-                <select id="pos-printer-select" class="fi" style="margin:0;"><option value="">جاري البحث عن طابعات...</option></select>
-            </div>
-            <div style="margin-bottom:10px;">
-                <label style="font-size:11px; opacity:0.75; display:block; margin-bottom:5px;">عرض ورق الإيصال</label>
-                <select id="pos-paper-width-select" class="fi" style="margin:0;">
-                    <option value="80">80 مم (الأشيع للمطاعم)</option>
-                    <option value="58">58 مم (طابعات صغيرة محمولة)</option>
-                </select>
-            </div>
-            <button class="btn-login" style="padding:11px; font-size:12.5px;" onclick="savePosDevicePairing()"><i class="fas fa-save"></i> حفظ إعدادات هذا الجهاز</button>
-            <button class="btn-login" style="padding:9px; font-size:11.5px; margin-top:8px; background:rgba(255,255,255,0.08); color:#fff;" onclick="connectPosAgent()"><i class="fas fa-sync"></i> إعادة فحص الطابعة الآن</button>
-            <p style="font-size:10px; opacity:0.6; margin-top:10px; line-height:1.6;">
-                💡 يتطلب تثبيت برنامج <b>QZ Tray</b> المجاني مرة واحدة على هذا الجهاز ليعمل الاكتشاف التلقائي وتعطيل ظهور نافذة الطباعة كل مرة. بدون تثبيته، تستمر الطباعة بشكل عادي عبر نافذة طباعة المتصفح القياسية.
-            </p>
-            <details style="margin-top:10px;">
-                <summary style="font-size:11px; color:var(--gold); cursor:pointer;">📋 سجل عمليات الطباعة والاتصال</summary>
-                <div id="pos-log-list" style="max-height:160px; overflow-y:auto; margin-top:8px; background:rgba(0,0,0,0.3); border-radius:8px; padding:8px;"></div>
-            </details>
-        </div>
-
-        <div style="background:rgba(212,175,55,0.06); border:1px solid rgba(212,175,55,0.25); border-radius:14px; padding:15px; margin-top:10px;">
-            <p style="font-size:12px; color:var(--gold); font-weight:bold; margin:0 0 8px;"><i class="fas fa-info-circle"></i> ملاحظة</p>
-            <p style="font-size:11px; opacity:0.7; margin:0; line-height:1.7;">
-                ⚠️ التواصل المباشر يُتحكم به من لوحة الإدارة فقط — لا يمكن تعديله من هنا.<br>
-                ⚠️ تجهيز الطلبات وتعديل المنيو يتحكم بها الإدارة أيضاً.<br>
-                🔔 صوت الإشعارات فقط يمكن تغييره من الجهاز.
-            </p>
-        </div>
-
-        <button onclick="logout()" style="width:100%; margin-top:20px; padding:14px; background:rgba(231,76,60,0.15); color:var(--danger); border:1px solid var(--danger); border-radius:12px; font-weight:bold; cursor:pointer; font-size:14px;">
-            <i class="fas fa-sign-out-alt"></i> تسجيل الخروج
-        </button>
-    </div>
-</div>
-
-<script>
-    // [FIX-WEBVIEW-LOGIN] هذا يجب أن يكون أول شيء يُنفَّذ في الصفحة بالكامل — قبل أي كود آخر — لضمان
-    // التقاط أي خطأ يحدث لاحقاً، بما في ذلك أخطاء تهيئة Supabase نفسها
-    window._shDebugLogs = [];
-    function debugLog(type, msg) {
-        const entry = `[${new Date().toLocaleTimeString('ar-SY')}] [${type}] ${msg}`;
-        window._shDebugLogs.push(entry);
-        if (window._shDebugLogs.length > 100) window._shDebugLogs.shift();
-        if (type === 'error') console.error('[SH-DEBUG]', msg); else console.log('[SH-DEBUG]', msg);
-        try {
-            const panel = document.getElementById('sh-debug-panel');
-            if (panel) panel.innerText = window._shDebugLogs.slice(-25).join('\n');
-        } catch(e) {}
-    }
-    window.addEventListener('error', (e) => {
-        debugLog('error', `❌ خطأ JS غير متوقع: ${e.message} — في: ${e.filename}:${e.lineno}`);
-    });
-    window.addEventListener('unhandledrejection', (e) => {
-        debugLog('error', `❌ خطأ Promise غير معالَج: ${e.reason}`);
-    });
-    debugLog('info', '🟢 بدأ تنفيذ سكربت الصفحة بنجاح');
-
-    // [FIX-WEBVIEW-LOGIN-V2] بدل افتراض أن مكتبة Supabase انتهت من التحميل فوراً بترتيب تسلسلي مضمون
-    // (قد لا يكون هذا مضموناً 100% على كل أنواع WebView)، نحاول التهيئة الآن، وإن فشلت لعدم اكتمال
-    // التحميل بعد، نعيد المحاولة تلقائياً كل 300ms لمدة تصل حتى 10 ثوانٍ قبل اعتبارها فاشلة نهائياً
-    let _sb = null;
-    let _sbInitAttempts = 0;
-    function _tryInitSupabase() {
-        _sbInitAttempts++;
-        try {
-            if (typeof createMinimalSupabaseClient === 'undefined') {
-                if (_sbInitAttempts === 1) debugLog('info', '⏳ ملف العميل المبسَّط لم يكتمل تحميله بعد، جاري الانتظار وإعادة المحاولة...');
-                if (_sbInitAttempts < 33) { setTimeout(_tryInitSupabase, 300); return; }
-                if (window._supabaseScriptError === true) {
-                    debugLog('error', '🔥 ملف sb-minimal-client.js فشل تحميله تماماً (خطأ 404) — تأكد أنه مرفوع بجانب الملف الرئيسي بنفس الاسم تماماً: sb-minimal-client.js');
-                } else {
-                    debugLog('error', '🔥 ملف sb-minimal-client.js لم يُحمَّل ولم تصل أي استجابة');
-                }
-                return;
-            }
-            _sb = createMinimalSupabaseClient(
-                'https://ricoslplbhphydhtrufe.supabase.co',
-                'sb_publishable_k6LgEuwPLdCsBMCFC12wfQ_BSOJotuw'
-            );
-            debugLog('info', '✅ تم تهيئة العميل المبسَّط بنجاح (بعد ' + _sbInitAttempts + ' محاولة)');
-        } catch(_sbInitErr) {
-            debugLog('error', '🔥 خطأ أثناء تهيئة العميل: ' + _sbInitErr.message);
-        }
-    }
-    _tryInitSupabase();
-
-    let currentRes = null, allOrders = [], historyOrders = [], refreshTimer = 0;
-    let activeOrderId = null, chatChannel = null, statusChannel = null;
-    let msgIds = new Set(), _archivedOrderIds = new Set(), _msgPollInterval = null;
-    let _lastOrderCount = 0;
-    // ===== صوتان منفصلان: صوت الطلبات وصوت التواصل/الرسائل =====
-    const sound = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
-    const chatSound = new Audio('https://assets.mixkit.co/active_storage/sfx/1862/1862-preview.mp3');
-    // ===== نهاية إضافة الصوتين المنفصلين =====
-
-    // ===== إعدادات النوع =====
-    const TYPE_CFG = {
-        restaurant: { label: 'مطعم',    icon: '🍽️', color: '#d4af37' },
-        flowers:    { label: 'ورود',     icon: '🌸', color: '#e91e8c' },
-        sweets:     { label: 'حلويات',   icon: '🍬', color: '#8e44ad' },
-        gifts:      { label: 'هدايا',    icon: '🎁', color: '#e67e22' },
-        pharmacy:   { label: 'صيدلية',   icon: '💊', color: '#3498db' },
-        other:      { label: 'متجر',     icon: '🛍️', color: '#16a085' },
-    };
-    function getCfg(t) { return TYPE_CFG[t] || TYPE_CFG['other']; }
-
-    function initAudio() { sound.play().then(() => { sound.pause(); sound.currentTime = 0; }).catch(() => {}); }
-
-    // ===== إعدادات محلية =====
-    function getLocalSetting(key, def) {
-        const s = localStorage.getItem('sh_set_' + (currentRes ? currentRes.id : 'x') + '_' + key);
-        if (s === null) return def;
-        if (s === 'true') return true;
-        if (s === 'false') return false;
-        const n = parseFloat(s);
-        return isNaN(n) ? s : n;
-    }
-    function saveLocalSetting(key, val) {
-        localStorage.setItem('sh_set_' + (currentRes ? currentRes.id : 'x') + '_' + key, String(val));
-    }
-    function getChatEnabled() {
-        // أولوية: إعداد محلي → ثم DB
-        const local = localStorage.getItem('sh_set_' + (currentRes ? currentRes.id : 'x') + '_chat_enabled');
-        if (local !== null) return local === 'true';
-        return currentRes && currentRes.chat_enabled === true;
-    }
-    function getPrepTime() {
-        const local = localStorage.getItem('sh_set_' + (currentRes ? currentRes.id : 'x') + '_prep_time');
-        if (local !== null) return parseInt(local) || 0;
-        return currentRes ? (parseInt(currentRes.prep_time) || 0) : 0;
-    }
-    function getSoundEnabled() {
-        return getLocalSetting('sound_enabled', true);
+    // تجاهل البيانات القديمة عند أول تحميل للصفحة
+    if (lastTimestamp === null) {
+      lastTimestamp = job.timestamp;
+      addLog(`بيانات موجودة مسبقاً – تم تجاهلها (#${job.orderNumber})`);
+      return;
     }
 
-    // ===== توليد اسم مستخدم تلقائي فريد =====
-    function generateAutoUsername(prefix) {
-        const ts = Date.now().toString(36).toUpperCase().slice(-5);
-        const rand = Math.floor(Math.random() * 9000 + 1000);
-        return (prefix || 'USR') + '-' + ts + '-' + rand;
-    }
-    // ===== نهاية توليد اسم المستخدم التلقائي =====
+    // طلب جديد فعلاً؟
+    if (job.timestamp === lastTimestamp) return;
+    lastTimestamp = job.timestamp;
 
-    // ===== تسجيل الدخول =====
-    // [SEC-FIX-2] Brute Force: حماية تسجيل الدخول من المحاولات المتعددة
-    // [SEC-PATCH-11] استمرارية القفل عبر إعادة التحميل باستخدام sessionStorage
-    // [FIX-WEBVIEW-LOGIN] حماية حرجة: هذا السطر كان بلا أي حماية وينفَّذ فوراً عند تحميل الصفحة (قبل
-    // تعريف أي دالة أخرى بما فيها زر تسجيل الدخول نفسه). بعض أغلفة WebView في تطبيقات أندرويد تمنع أو
-    // تُقيّد الوصول لـ sessionStorage (خصوصاً عند تحميل الصفحة من مخطط غير قياسي)، فيرمي الوصول إليها
-    // استثناءً (SecurityError) يوقف تنفيذ كامل الكود البرمجي في الصفحة فوراً — وهذا يفسّر بدقة العطل
-    // المُكتشف: الزر "موجود" بصرياً (HTML سابق للسكربت) لكن onclick لم يُعرَّف أبداً لأن السكربت توقف هنا
-    let _loginAttempts = 0, _loginLockUntil = 0;
-    try {
-        _loginAttempts = parseInt(sessionStorage.getItem('_res_attempts') || '0');
-        _loginLockUntil = parseInt(sessionStorage.getItem('_res_lock_until') || '0');
-        debugLog('info', 'sessionStorage متاح ويعمل بنجاح ✅');
-    } catch(_storageErr) {
-        debugLog('error', '⚠️ sessionStorage غير متاح في هذا WebView — تم تجاوز الخطأ والاستمرار بقيم افتراضية: ' + _storageErr.message);
-    }
+    addLog(`📦 وصل طلب جديد: ${job.orderNumber} – ${job.customerName}`);
+    buildReceipt(job);
+    triggerPrint();
+  });
 
-    async function checkAuth() {
-        debugLog('info', '👆 تم الضغط على زر تسجيل الدخول — بدء التنفيذ'); // [FIX-WEBVIEW-LOGIN] تأكيد فعلي أن onclick يصل لهذه الدالة
-        try {
-            const now = Date.now();
-            if (now < _loginLockUntil) {
-                const secs = Math.ceil((_loginLockUntil - now) / 1000);
-                showToast('⛔ محظور مؤقتاً. انتظر ' + secs + ' ثانية');
-                debugLog('info', `محظور مؤقتاً، متبقٍ ${secs} ثانية`);
-                return;
-            }
-            const emailEl = document.getElementById('login-email');
-            const codeEl = document.getElementById('login-code');
-            if (!emailEl || !codeEl) { debugLog('error', '❌ لم يُعثر على حقول الإيميل/الكود في الصفحة! تحقق من بنية HTML'); return; }
-            const email = emailEl.value.trim().toLowerCase();
-            const code  = codeEl.value.trim();
-            if (!email || !code) { showToast('يرجى إدخال البريد والكود ❌'); debugLog('info', 'إيميل أو كود فاضي، توقفت العملية'); return; }
+  // ─── بناء الإيصال ───
+  function buildReceipt(j) {
+    const now = new Date();
+    const timeStr = now.toLocaleTimeString('ar-SA');
+    const dateStr = now.toLocaleDateString('ar-SA');
 
-            // [FIX-WEBVIEW-LOGIN-V2] إن لم تكتمل تهيئة Supabase بعد عند الضغط على الزر، نحاول تهيئتها
-            // الآن مباشرة بشكل أخير قبل الفشل النهائي — يفيد لو كان الانتظار التلقائي لم يكتمل بعد
-            if (!_sb) {
-                debugLog('info', '⏳ العميل غير جاهز بعد، محاولة تهيئة أخيرة فورية...');
-                try {
-                    if (typeof createMinimalSupabaseClient !== 'undefined') {
-                        _sb = createMinimalSupabaseClient('https://ricoslplbhphydhtrufe.supabase.co', 'sb_publishable_k6LgEuwPLdCsBMCFC12wfQ_BSOJotuw');
-                        debugLog('info', '✅ نجحت المحاولة الأخيرة لتهيئة العميل');
-                    }
-                } catch(e) { debugLog('error', 'فشلت المحاولة الأخيرة أيضاً: ' + e.message); }
-                if (!_sb) {
-                    showToast('⚠️ تعذّر الاتصال بالخادم — تحقق من الإنترنت وحاول مجدداً بعد ثوانٍ');
-                    debugLog('error', '🔥 توقفت العملية — العميل غير جاهز إطلاقاً (ملف sb-minimal-client.js لم يُحمَّل)');
-                    return;
-                }
-            }
+    const itemsHTML = (j.items || []).map(i => `
+      <div class="r-item">
+        <span class="r-item-name">${i.name}</span>
+        <span class="r-item-qty">${i.qty}</span>
+        <span class="r-item-price">${(i.subtotal||0).toFixed(2)}</span>
+      </div>`).join('');
 
-            debugLog('info', `📡 جاري الاتصال بـ Supabase للبحث عن: ${email}`);
-            const { data: rowData, error: rowError } = await _sb.from('restaurants').select('*').ilike('email', email).maybeSingle();
-            if (rowError) { debugLog('error', '❌ خطأ من Supabase أثناء البحث: ' + rowError.message); showToast('⚠️ تعذّر الاتصال بالخادم، تحقق من الإنترنت'); return; }
-            debugLog('info', rowData ? '✅ وُجد مطعم مطابق للإيميل' : '⚠️ لا يوجد مطعم بهذا الإيميل');
+    const notesHTML = j.notes
+      ? `<div class="r-divider"></div><div class="r-notes">📝 ${j.notes}</div>`
+      : '';
 
-            const data = rowData && (String(rowData.access_code).trim() === String(code).trim()) ? rowData : null;
-            if (data) {
-                debugLog('info', '✅ الكود صحيح — تسجيل الدخول ناجح، جاري بدء التطبيق');
-                _loginAttempts = 0;
-                try { sessionStorage.removeItem('_res_attempts'); sessionStorage.removeItem('_res_lock_until'); } catch(e) { debugLog('error', 'تعذّر مسح sessionStorage (غير حرج): ' + e.message); }
-                currentRes = data;
-                if (!currentRes.auto_username) {
-                    const autoUser = generateAutoUsername('RES');
-                    try { await _sb.from('restaurants').update({ auto_username: autoUser }).eq('id', currentRes.id); } catch(e) {}
-                    currentRes.auto_username = autoUser;
-                }
-                const _sessionData39 = Object.assign({}, data, { _ts: Date.now() });
-                try {
-                    localStorage.setItem('sh_store_session', JSON.stringify(_sessionData39));
-                    debugLog('info', '✅ تم حفظ الجلسة في localStorage بنجاح');
-                } catch(e) {
-                    // [FIX-WEBVIEW-LOGIN] إن تعذّر حفظ الجلسة (localStorage مقيَّد)، نستمر بالجلسة في
-                    // الذاكرة فقط للسماح بالعمل بالجلسة الحالية حتى لو لن تُحفظ بعد إغلاق التطبيق
-                    debugLog('error', '⚠️ تعذّر حفظ الجلسة في localStorage: ' + e.message + ' — سيعمل التطبيق بالجلسة الحالية فقط دون حفظها');
-                }
-                startApp();
-                debugLog('info', '🚀 تم استدعاء startApp() — يجب أن تظهر الصفحة الرئيسية الآن');
-            } else {
-                debugLog('info', '❌ بيانات الدخول غير صحيحة');
-                _loginAttempts++;
-                try {
-                    sessionStorage.setItem('_res_attempts', _loginAttempts);
-                    if (_loginAttempts >= 5) {
-                        _loginLockUntil = Date.now() + 60000;
-                        sessionStorage.setItem('_res_lock_until', _loginLockUntil);
-                        _loginAttempts = 0;
-                        sessionStorage.setItem('_res_attempts', '0');
-                    }
-                } catch(e) { debugLog('error', 'تعذّر تحديث عداد المحاولات (غير حرج): ' + e.message); }
-                showToast('بيانات الدخول غير صحيحة ❌');
-            }
-        } catch(_fatalErr) {
-            // [FIX-WEBVIEW-LOGIN] الحماية الأهم: أي استثناء غير متوقع في أي مكان من هذه الدالة كان
-            // سابقاً يوقف العملية بصمت تماماً بدون أي أثر — الآن يظهر بوضوح دائماً
-            debugLog('error', '🔥 خطأ غير متوقع توقفت بسببه عملية تسجيل الدخول: ' + (_fatalErr.message || _fatalErr));
-            showToast('⚠️ حدث خطأ غير متوقع، افتح سجل التشخيص بالأسفل لمعرفة السبب');
-        }
-    }
+    document.getElementById('receipt').innerHTML = `
+      <div class="r-header">
+        <div class="r-logo">${j.restaurantName || 'المطعم'}</div>
+        <div class="r-sub">إيصال طلب</div>
+      </div>
 
-    // ===== بدء التطبيق =====
-    function startApp() {
-        const s = localStorage.getItem('sh_store_session');
-        // [SEC-PATCH-27] التحقق من صحة الجلسة وانتهاء صلاحيتها (24 ساعة)
-        if (s) {
-            try {
-                const _parsed = JSON.parse(s);
-                const _SESSION_TTL = 24 * 60 * 60 * 1000;
-                if (_parsed._ts && (Date.now() - _parsed._ts) > _SESSION_TTL) {
-                    localStorage.removeItem('sh_store_session');
-                    return;
-                }
-                currentRes = _parsed;
-            } catch(e) { localStorage.removeItem('sh_store_session'); return; }
-        }
-        if (!currentRes) return;
-        document.getElementById('auth-screen').style.display = 'none';
-        document.getElementById('main-content').style.display = 'block';
-        document.getElementById('display-res-name').innerText = currentRes.name;
-        const cfg = getCfg(currentRes.specialty_type);
-        document.getElementById('display-res-sub').innerText = cfg.icon + ' ' + cfg.label;
-        // جلب أحدث بيانات المطعم من DB (بما فيها صلاحيات الإدارة)
-        _sb.from('restaurants').select('*').eq('id', currentRes.id).single().then(({ data: fresh }) => {
-            if (fresh) { currentRes = fresh; localStorage.setItem('sh_store_session', JSON.stringify(fresh)); }
-            _applySettings();
-        });
-        _applySettings();
-        loadOrders(true);
-        loadHistory();
-        renderMenuSections();
-        // [POS-PRINT] تهيئة نظام الطباعة: جلب ربط الجهاز ثم محاولة الاتصال بوكيل الطباعة المحلي
-        _loadPosDevicePairing().then(() => connectPosAgent());
-        // تحديث دوري كل 5 ثواني
-        // [FIX-INTERVAL-39] منع تكديس المؤقتات عند إعادة استدعاء startApp
-        if (window._mainRefreshInterval39) clearInterval(window._mainRefreshInterval39);
-        window._mainRefreshInterval39 = setInterval(() => {
-            refreshTimer += 5;
-            document.getElementById('sync-bar').style.width = (refreshTimer % 100) + '%';
-            if (refreshTimer % 100 === 0) { loadOrders(); loadHistory(); }
-        }, 250);
-    }
+      <div class="r-divider"></div>
 
-    // ===== تطبيق الإعدادات =====
-    function _applySettings() {
-        if (!currentRes) return;
-        // ===== تطبيق صلاحيات الإدارة =====
-        // صلاحية التواصل المباشر — تُقرأ من DB فقط (is_direct_contact)
-        const dbDirectContact = currentRes.is_direct_contact === true;
-        const chatNotice = document.getElementById('chat-disabled-notice');
-        if (chatNotice) chatNotice.style.display = dbDirectContact ? 'none' : 'block';
-        // إخفاء/إظهار تبويب التواصل بالكامل حسب الصلاحية
-        const tabChat = document.getElementById('tab-chat');
-        if (tabChat) {
-            if (!dbDirectContact) {
-                tabChat.style.opacity = '0.35';
-                tabChat.style.pointerEvents = 'none';
-                tabChat.title = 'التواصل المباشر غير مفعّل من الإدارة';
-            } else {
-                tabChat.style.opacity = '1';
-                tabChat.style.pointerEvents = '';
-                tabChat.title = '';
-            }
-        }
-        // صلاحية تعديل المنيو — تُقرأ من DB فقط (is_menu_enabled)
-        const dbMenuEnabled = currentRes.is_menu_enabled === true;
-        const tabMenu = document.getElementById('tab-menu');
-        if (tabMenu) {
-            if (!dbMenuEnabled) {
-                tabMenu.style.opacity = '0.35';
-                tabMenu.style.pointerEvents = 'none';
-                tabMenu.title = 'تعديل المنيو غير مفعّل من الإدارة';
-            } else {
-                tabMenu.style.opacity = '1';
-                tabMenu.style.pointerEvents = '';
-                tabMenu.title = '';
-            }
-        }
-        // صلاحية تجهيز الطلبات — تُقرأ من DB فقط (allow_orders)
-        const dbAllowOrders = currentRes.allow_orders === true;
-        const tabOrders = document.getElementById('tab-orders');
-        if (tabOrders) {
-            if (!dbAllowOrders) {
-                tabOrders.style.opacity = '0.35';
-                tabOrders.style.pointerEvents = 'none';
-                tabOrders.title = 'تجهيز الطلبات غير مفعّل من الإدارة';
-            } else {
-                tabOrders.style.opacity = '1';
-                tabOrders.style.pointerEvents = '';
-                tabOrders.title = '';
-            }
-        }
-        // ===== نهاية تطبيق صلاحيات الإدارة =====
-        // مدة التجهيز
-        const prepEl = document.getElementById('prep-time-val');
-        if (prepEl) prepEl.value = getPrepTime();
-        // toggle الإعدادات — التواصل يعتمد على DB فقط الآن
-        const toggleChat = document.getElementById('toggle-chat');
-        if (toggleChat) { toggleChat.checked = dbDirectContact; toggleChat.disabled = true; }
-        const toggleSound = document.getElementById('toggle-sound');
-        if (toggleSound) toggleSound.checked = getSoundEnabled();
-    }
+      <div class="r-row"><span class="r-label">رقم الطلب</span><span>${j.orderNumber}</span></div>
+      <div class="r-row"><span class="r-label">العميل</span><span>${j.customerName}</span></div>
+      <div class="r-row"><span class="r-label">المندوب</span><span>${j.driverName || '—'}</span></div>
+      <div class="r-row"><span class="r-label">نوع الطلب</span><span>${j.orderType}</span></div>
+      <div class="r-row"><span class="r-label">التاريخ</span><span>${dateStr}</span></div>
+      <div class="r-row"><span class="r-label">الوقت</span><span>${timeStr}</span></div>
 
-    // ===== تبديل الصفحات =====
-    function switchTab(tab) {
-        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-        document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-        document.getElementById('tab-' + tab).classList.add('active');
-        document.getElementById('page-' + tab).classList.add('active');
-        // مسح الشارة عند فتح التبويب
-        const badge = document.getElementById('badge-' + tab);
-        if (badge) { badge.style.display = 'none'; }
-        if (tab === 'chat') renderChatOrders();
-        if (tab === 'archive') renderArchive();
-        if (tab === 'menu') renderMenuSections();
-        if (tab === 'settings') _applySettings();
-    }
+      <div class="r-divider"></div>
 
-    // ===== جلب الطلبات =====
-    // ===========================================================================
-    // [POS-PRINT] نظام طباعة احترافي متكامل لأجهزة نقاط البيع والطابعات الحرارية
-    // ===========================================================================
-    // ملاحظة صادقة مهمة: المتصفحات تمنع أي اكتشاف صامت لطابعات USB/Serial بدون إذن المستخدم
-    // مرة واحدة على الأقل — هذا قيد أمني من المتصفح نفسه، لا يمكن تجاوزه ببرمجة JS بحتة بأي حال.
-    // الحل الرسمي المعتمد صناعياً لأنظمة نقاط البيع: وكيل طباعة محلي يعمل في الخلفية على جهاز
-    // الكاشير، ويتواصل الموقع معه عبر WebSocket محلي — هنا نستخدم QZ Tray (مجاني، مفتوح المصدر،
-    // يدعم أغلب الطابعات الحرارية القياسية دون حاجة SDK خاص بكل شركة مصنّعة).
-    // التثبيت مطلوب مرة واحدة فقط على كل جهاز POS: https://qz.io/download/
+      <div class="r-items-header">
+        <span>الصنف</span><span>الكمية</span><span>السعر</span>
+      </div>
+      ${itemsHTML}
 
-    const POS_DEVICE_ID = (() => {
-        let id = localStorage.getItem('sh_pos_device_id');
-        if (!id) { id = 'pos_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10); localStorage.setItem('sh_pos_device_id', id); }
-        return id;
-    })();
+      <div class="r-divider"></div>
+      <div class="r-total">المجموع: ${(j.total||0).toFixed(2)} ر.س</div>
+      <div class="r-divider"></div>
 
-    let _posDeviceInfo = null;  // الصف من جدول pos_devices الخاص بهذا الجهاز (إن وُجد)
-    let _qzConnected = false;
-    let _qzReconnectTimer = null;
-    const _posLogs = []; // سجل محلي ظاهر في واجهة التطبيق لتسهيل تتبع المشاكل فوراً
+      ${notesHTML}
 
-    function posLog(type, message) {
-        const entry = { type, message, time: new Date().toLocaleTimeString('ar-SY') };
-        _posLogs.unshift(entry);
-        if (_posLogs.length > 50) _posLogs.pop();
-        renderPosLogPanel();
-        try { _sb.from('print_logs').insert([{ device_id: POS_DEVICE_ID, status: type, detail: message }]).then(()=>{}).catch(()=>{}); } catch(e) {}
-        console.log(`[POS-PRINT][${type}]`, message);
-    }
+      <div class="r-footer">شكراً لزيارتكم 🙏<br/>يُرجى الاحتفاظ بالإيصال</div>
+    `;
+  }
 
-    function renderPosLogPanel() {
-        const el = document.getElementById('pos-log-list');
-        if (!el) return;
-        const colors = { success: '#2ecc71', failed: '#e74c3c', info: '#3498db', queued: '#f39c12' };
-        el.innerHTML = _posLogs.map(l => `<div style="font-size:10.5px; padding:4px 0; border-bottom:1px solid rgba(255,255,255,0.06); color:${colors[l.type]||'#ccc'};">[${l.time}] ${escHtml(l.message)}</div>`).join('') || '<div style="font-size:11px; color:#888;">لا توجد سجلات بعد</div>';
-    }
+  // ─── تشغيل الطباعة التلقائية ───
+  function triggerPrint() {
+    badge.className = 'badge printing';
+    badge.innerHTML = '<div class="dot blink"></div> جاري الطباعة…';
+    addLog('🖨️ بدء الطباعة التلقائية…');
 
-    async function _loadPosDevicePairing() {
-        try {
-            const { data, error } = await _sb.from('pos_devices').select('*').eq('device_id', POS_DEVICE_ID).maybeSingle();
-            if (error) { posLog('failed', 'تعذّر جلب إعدادات ربط الجهاز: ' + error.message); return; }
-            _posDeviceInfo = data;
-            if (data) {
-                posLog('info', `الجهاز مرتبط بمطعم: ${data.restaurant_name || '—'} | طابعة: ${data.printer_name || 'غير محددة'} | عرض الورق: ${data.paper_width_mm || 80}مم`);
-                await _sb.from('pos_devices').update({ last_seen: new Date().toISOString() }).eq('device_id', POS_DEVICE_ID);
-            } else {
-                posLog('info', `جهاز جديد غير مرتبط — معرّف الجهاز: ${POS_DEVICE_ID} (يجب ربطه من شاشة إعدادات الطابعة بالأسفل)`);
-            }
-        } catch(e) { posLog('failed', 'استثناء أثناء جلب إعدادات الربط: ' + e.message); }
-    }
+    /*
+      window.print() يعمل في:
+        ✅ متصفح Chrome / WebView على Android بدون رسالة تأكيد
+           إذا كان الـ WebView يُشغّل الصفحة كـ kiosk / trusted app.
+        ⚠️  إذا ظهر dialog للطابعة: اضبط الطابعة الحرارية كطابعة افتراضية
+            في Android وفعّل Auto-confirm في إعدادات Chrome/WebView.
 
-    async function connectPosAgent() {
-        if (typeof qz === 'undefined') { posLog('failed', 'مكتبة QZ Tray لم تُحمَّل بشكل صحيح'); return; }
-        if (qz.websocket.isActive()) { _qzConnected = true; updatePosStatusBadge(); return; }
-        try {
-            await qz.websocket.connect({ retries: 2, delay: 1 });
-            _qzConnected = true;
-            posLog('success', '✅ تم الاتصال بوكيل الطباعة المحلي (QZ Tray) بنجاح');
-            updatePosStatusBadge();
-            if (_qzReconnectTimer) { clearInterval(_qzReconnectTimer); _qzReconnectTimer = null; }
-            await _discoverPrinters();
-            await _flushPrintQueue();
-        } catch(e) {
-            _qzConnected = false;
-            posLog('failed', '⚠️ تعذّر الاتصال بوكيل الطباعة — تأكد من تثبيت وتشغيل QZ Tray على هذا الجهاز');
-            updatePosStatusBadge();
-            if (!_qzReconnectTimer) _qzReconnectTimer = setInterval(connectPosAgent, 10000);
-        }
-    }
+        إذا أردت Native Bridge بدلاً من window.print():
+        استبدل السطر أدناه بـ: Android.print(receiptHTML);
+        (بعد إضافة JavascriptInterface في الكود الأصلي)
+    */
+    setTimeout(() => {
+      window.print();
 
-    async function _discoverPrinters() {
-        try {
-            const printers = await qz.printers.find();
-            posLog('info', `📠 الطابعات المكتشفة على هذا الجهاز: ${printers.length ? printers.join(', ') : 'لا توجد طابعات'}`);
-            const sel = document.getElementById('pos-printer-select');
-            if (sel) {
-                sel.innerHTML = printers.map(p => `<option value="${escHtml(p)}" ${_posDeviceInfo && _posDeviceInfo.printer_name === p ? 'selected' : ''}>${escHtml(p)}</option>`).join('') || '<option value="">لا توجد طابعات</option>';
-            }
-            return printers;
-        } catch(e) { posLog('failed', 'خطأ أثناء اكتشاف الطابعات: ' + e.message); return []; }
-    }
+      setTimeout(() => {
+        badge.className = 'badge connected';
+        badge.innerHTML = '<div class="dot"></div> متصل – ينتظر الطباعة';
+        addLog('✅ تمت الطباعة بنجاح');
+      }, 2000);
+    }, 300);
+  }
 
-    function updatePosStatusBadge() {
-        const el = document.getElementById('pos-status-badge');
-        if (!el) return;
-        if (_qzConnected) {
-            el.innerHTML = '<i class="fas fa-check-circle"></i> الطابعة متصلة ✅';
-            el.style.color = '#2ecc71'; el.style.borderColor = '#2ecc71';
-        } else {
-            el.innerHTML = '<i class="fas fa-times-circle"></i> الطابعة غير متصلة — جاري إعادة المحاولة...';
-            el.style.color = '#e74c3c'; el.style.borderColor = '#e74c3c';
-        }
-    }
-
-    async function savePosDevicePairing() {
-        if (!currentRes) { showToast('سجّل دخولك أولاً'); return; }
-        const printerName = (document.getElementById('pos-printer-select') ? document.getElementById('pos-printer-select').value : null);
-        const paperWidth = parseInt(document.getElementById('pos-paper-width-select') ? document.getElementById('pos-paper-width-select').value : 0) || 80;
-        try {
-            const { error } = await _sb.from('pos_devices').upsert([{
-                device_id: POS_DEVICE_ID, restaurant_id: currentRes.id, restaurant_name: currentRes.name,
-                printer_name: printerName, paper_width_mm: paperWidth, last_seen: new Date().toISOString()
-            }], { onConflict: 'device_id' });
-            if (error) throw error;
-            posLog('success', `✅ تم ربط هذا الجهاز بمطعم "${currentRes.name}" — الطابعة: ${printerName || 'غير محددة'} — عرض الورق: ${paperWidth}مم`);
-            showToast('✅ تم حفظ إعدادات الطابعة لهذا الجهاز بنجاح');
-            await _loadPosDevicePairing();
-        } catch(e) { showToast('⚠️ خطأ: ' + e.message); posLog('failed', 'فشل حفظ ربط الجهاز: ' + e.message); }
-    }
-
-    function _buildReceiptHtml(o, widthMm) {
-        const pxWidth = widthMm === 58 ? 220 : 300;
-        const fontBase = widthMm === 58 ? '11px' : '13px';
-        let itemsRows = '', itemsTotal = 0;
-        try {
-            const arr = JSON.parse(o.items || '[]');
-            itemsRows = arr.map(i => {
-                itemsTotal += parseFloat(i.p) || 0;
-                return `<tr><td style="padding:3px 0;">${escHtml(i.n)}</td><td style="text-align:left;padding:3px 0;">${(parseFloat(i.p)||0).toLocaleString()}</td></tr>`;
-            }).join('');
-        } catch(e) {}
-        const logoHtml = currentRes && currentRes.logo ? `<img src="${currentRes.logo}" style="width:${widthMm===58?'45px':'60px'};height:${widthMm===58?'45px':'60px'};border-radius:8px;object-fit:cover;margin-bottom:5px;">` : '';
-        return `<div style="font-family:-apple-system,sans-serif; width:${pxWidth}px; color:#000; font-size:${fontBase}; padding:6px;">
-            <div style="text-align:center;">${logoHtml}<h3 style="margin:3px 0;">${escHtml(currentRes ? currentRes.name : 'شاهين إكسبريس')}</h3><p style="font-size:9px; margin:0;">إيصال طلب 🦅</p></div>
-            <hr style="border:none;border-top:1px dashed #000;margin:8px 0;">
-            <p style="font-size:${widthMm===58?'9.5px':'11px'};">رقم الطلب: #${String(o.id).slice(-6)}<br>العميل: ${escHtml(o.customer_name)||'عميل شاهين'}<br>${new Date(o.created_at).toLocaleString('ar-SY')}</p>
-            <hr style="border:none;border-top:1px dashed #000;margin:8px 0;">
-            <table style="width:100%; border-collapse:collapse;">${itemsRows}</table>
-            <hr style="border:none;border-top:1px dashed #000;margin:8px 0;">
-            <table style="width:100%;"><tr style="font-weight:bold; font-size:${widthMm===58?'13px':'15px'};"><td>الإجمالي</td><td style="text-align:left;">${Number(o.total||itemsTotal).toLocaleString()} ل.س</td></tr></table>
-            <p style="text-align:center; font-size:9px; margin-top:8px;">شكراً لاختياركم شاهين إكسبريس 🦅</p>
-        </div>`;
-    }
-
-    function _getPrintQueue() {
-        try { return JSON.parse(localStorage.getItem('sh_print_queue') || '[]'); } catch(e) { return []; }
-    }
-    function _setPrintQueue(q) { localStorage.setItem('sh_print_queue', JSON.stringify(q)); }
-    function _getPrintedSet() {
-        try { return new Set(JSON.parse(localStorage.getItem('sh_printed_order_ids') || '[]')); } catch(e) { return new Set(); }
-    }
-    function _markPrinted(orderId) {
-        const set = _getPrintedSet(); set.add(String(orderId));
-        const arr = Array.from(set).slice(-500);
-        localStorage.setItem('sh_printed_order_ids', JSON.stringify(arr));
-    }
-
-    async function printOrderReceipt(o) {
-        // [FIX-PRINT-STATUS-DB] فحص حالة الطباعة من قاعدة البيانات أولاً، لا من الجهاز فقط — هذا يضمن
-        // عدم التكرار حتى لو أُعيد تثبيت التطبيق أو مُسحت بيانات المتصفح بالكامل على هذا الجهاز
-        try {
-            const { data: freshOrder } = await _sb.from('sh_public_orders').select('print_status').eq('id', o.id).maybeSingle();
-            if (freshOrder && freshOrder.print_status === 'printed') {
-                posLog('info', `تم تجاهل طباعة مكررة لطلب #${String(o.id).slice(-6)} (مُسجَّل "مطبوع" في قاعدة البيانات)`);
-                _markPrinted(o.id);
-                return;
-            }
-        } catch(e) { posLog('failed', 'خطأ أثناء فحص حالة الطباعة من القاعدة: ' + e.message); }
-
-        if (_getPrintedSet().has(String(o.id))) { posLog('info', `تم تجاهل طباعة مكررة لطلب #${String(o.id).slice(-6)} (طُبع مسبقاً على هذا الجهاز)`); return; }
-
-        // [FIX-NATIVE-PRINT-BRIDGE] الطباعة الآن تعتمد على window.print() القياسية، والتي يجب أن يربطها
-        // غلاف التطبيق (Wrapper) بطابعة النظام مباشرة عبر جسر الطباعة الأصلي لأندرويد (PrintManager) —
-        // هذا يتطلب استخدام أداة تحويل موقع لتطبيق تدعم الطباعة بشكل جاهز (مثل Median.co)، فلا حاجة
-        // لأي كود JS معقَّد، الجسر الأصلي نفسه هو ما يرسل الإيصال لطابعة النظام المسجَّلة فعلياً
-        const widthMm = (_posDeviceInfo && _posDeviceInfo.paper_width_mm) || 58;
-        const html = _buildReceiptHtml(o, widthMm);
-        try {
-            _printViaIframeFallback(html);
-            _markPrinted(o.id);
-            // [FIX-HONEST-LIMIT] لا توجد طريقة في معيار الويب لمعرفة هل اكتملت الطباعة فعلياً بنجاح بعد
-            // فتح نافذة الطباعة (window.print لا تُرجع نتيجة) — نُسجِّلها "مطبوعة" تقديرياً، وزر "إعادة
-            // الطباعة" يبقى متاحاً دائماً يدوياً لأي تصحيح لازم
-            _setOrderPrintStatus(o.id, 'printed', null);
-            posLog('success', `🖨️ تم إرسال طلب الطباعة للطلب #${String(o.id).slice(-6)} إلى نظام الطباعة`);
-        } catch(e) {
-            posLog('failed', `❌ فشل إرسال أمر الطباعة للطلب #${String(o.id).slice(-6)}: ${e.message}`);
-            _setOrderPrintStatus(o.id, 'failed', e.message);
-            _queuePrint(o);
-            _showPrintFailureBanner(o, e.message);
-        }
-    }
-
-    // [FIX-PRINT-STATUS-DB] تحديث حالة الطباعة في قاعدة البيانات — مرئية لأي جهاز/متصفح آخر يفتح نفس الطلب
-    async function _setOrderPrintStatus(orderId, status, failReason) {
-        try {
-            const payload = { print_status: status, print_fail_reason: failReason || null };
-            if (status === 'printed') payload.printed_at = new Date().toISOString();
-            await _sb.from('sh_public_orders').update(payload).eq('id', orderId);
-        } catch(e) { posLog('failed', 'تعذّر تحديث حالة الطباعة في القاعدة: ' + e.message); }
-    }
-
-    // [FIX-PRINT-FAILURE-UI] شريط تنبيه واضح وظاهر عند فشل الطباعة، مع زر إعادة المحاولة الفورية
-    function _showPrintFailureBanner(o, reason) {
-        let banner = document.getElementById('print-failure-banner');
-        if (!banner) {
-            banner = document.createElement('div');
-            banner.id = 'print-failure-banner';
-            banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:999999;background:#7a0000;color:#fff;padding:12px 16px;font-size:13px;text-align:center;box-shadow:0 2px 10px rgba(0,0,0,0.5);';
-            document.body.insertBefore(banner, document.body.firstChild);
-        }
-        banner.innerHTML = '⚠️ فشلت طباعة الطلب #' + String(o.id).slice(-6) + ' — ' + reason +
-            ' <button onclick="printOrderReceiptById(\'' + o.id + '\'); document.getElementById(\'print-failure-banner\').remove();" style="background:#fff;color:#7a0000;border:none;padding:6px 14px;border-radius:8px;font-weight:bold;margin-right:8px;cursor:pointer;">إعادة الطباعة</button>' +
-            ' <button onclick="document.getElementById(\'print-failure-banner\').remove();" style="background:transparent;border:1px solid #fff;color:#fff;padding:6px 10px;border-radius:8px;cursor:pointer;">إغلاق</button>';
-    }
-
-    function _queuePrint(o) {
-        const q = _getPrintQueue();
-        if (q.some(item => String(item.id) === String(o.id))) return;
-        q.push(o);
-        _setPrintQueue(q);
-    }
-
-    async function _flushPrintQueue() {
-        const q = _getPrintQueue();
-        if (!q.length) return;
-        posLog('info', `🔄 إعادة محاولة طباعة ${q.length} طلب(ات) من الطابور المحفوظ...`);
-        _setPrintQueue([]); // نُفرِّغ الطابور أولاً، وكل طلب يُعاد إدراجه في الطابور تلقائياً من جديد إن فشل
-        for (const o of q) {
-            if (_getPrintedSet().has(String(o.id))) continue;
-            // [FIX-PRINT-CONSISTENCY] إعادة استخدام نفس دالة الطباعة الأساسية بالضبط — تضمن نفس فحص
-            // حالة قاعدة البيانات، نفس أمر القص، ونفس شريط التنبيه عند الفشل، بدون أي تكرار للمنطق
-            await printOrderReceipt(o);
-        }
-    }
-
-    function _printViaIframeFallback(html) {
-        let frame = document.getElementById('receipt-print-frame');
-        if (!frame) {
-            frame = document.createElement('iframe');
-            frame.id = 'receipt-print-frame';
-            frame.style.position = 'fixed'; frame.style.right = '-9999px'; frame.style.width = '0'; frame.style.height = '0'; frame.style.border = 'none';
-            document.body.appendChild(frame);
-        }
-        const doc = frame.contentWindow.document;
-        // [FIX-PRINT-PAGE-SIZE] إعداد @page بعرض الورق الصحيح وبلا أي حواف، لضمان طباعة نظيفة بكامل
-        // عرض الإيصال الحراري بدل تنسيق ورقة A4 الافتراضي الذي قد يضغط/يكبّر المحتوى بشكل خاطئ
-        const widthMm = (_posDeviceInfo && _posDeviceInfo.paper_width_mm) || 58;
-        doc.open();
-        doc.write('<html dir="rtl"><head><style>@page { size: ' + widthMm + 'mm auto; margin: 0; } body { margin: 0; padding: 0; }</style></head><body>' + html + '</body></html>');
-        doc.close();
-        setTimeout(() => { try { frame.contentWindow.focus(); frame.contentWindow.print(); } catch(e) {} }, 300);
-    }
-
-    function printOrderReceiptById(orderId) {
-        const o = allOrders.find(x => String(x.id) === String(orderId)) || historyOrders.find(x => String(x.id) === String(orderId));
-        if (!o) { showToast('⚠️ تعذّر العثور على بيانات الطلب للطباعة'); return; }
-        const widthMm = (_posDeviceInfo && _posDeviceInfo.paper_width_mm) || 58;
-        const html = _buildReceiptHtml(o, widthMm);
-        try {
-            _printViaIframeFallback(html);
-            posLog('success', `🖨️ طباعة يدوية تم إرسالها للطلب #${String(orderId).slice(-6)}`);
-            _setOrderPrintStatus(orderId, 'printed', null);
-        } catch(e) {
-            posLog('failed', `❌ فشلت الطباعة اليدوية: ${e.message}`);
-            showToast('⚠️ تعذّر فتح نافذة الطباعة: ' + e.message);
-        }
-    }
-
-    // [AUTO-ACCEPT] قبول تلقائي للطلبات الجديدة + طباعة إيصال فوراً، بدون أي تدخل يدوي
-    function _getAutoAcceptedSet() {
-        try { return new Set(JSON.parse(localStorage.getItem('sh_auto_accepted_ids') || '[]')); }
-        catch(e) { return new Set(); }
-    }
-    function _saveAutoAcceptedSet(set) {
-        try { localStorage.setItem('sh_auto_accepted_ids', JSON.stringify(Array.from(set))); } catch(e) {}
-    }
-    async function _autoAcceptNewOrders(newSearchingOrders) {
-        if (!newSearchingOrders.length) return;
-        const seen = _getAutoAcceptedSet();
-        for (const o of newSearchingOrders) {
-            if (seen.has(String(o.id))) continue;
-            seen.add(String(o.id));
-            try {
-                await _sb.from('orders').update({ status: 'accepted', restaurant_note: '📥 تم استلام طلبك — بدأنا التجهيز ✅' }).eq('id', o.id);
-                await _sb.from('sh_public_orders').update({ status: 'accepted', restaurant_note: '📥 تم استلام طلبك — بدأنا التجهيز ✅' }).eq('id', o.id);
-                const { data: ord } = await _sb.from('sh_public_orders').select('customer_id, driver_id').eq('id', o.id).single();
-                if ((ord && ord.customer_id)) {
-                    await _sb.from('notifications').insert([{ user_id: ord.customer_id, message: '🍽️ تحديث طلبك من ' + ((currentRes && currentRes.name) || 'المطعم') + ': 📥 تم استلام طلبك — بدأنا التجهيز ✅', type: 'order_status', created_at: new Date().toISOString() }]).catch(() => {});
-                }
-                showToast('✅ تم قبول الطلب تلقائياً وطباعة الإيصال 🦅');
-                printOrderReceipt(o);
-            } catch(e) {
-                posLog('failed', 'خطأ أثناء القبول التلقائي للطلب: ' + o.id + ' — ' + e.message);
-                seen.delete(String(o.id));
-            }
-        }
-        _saveAutoAcceptedSet(seen);
-    }
-
-    async function loadOrders(isFirst = false) {
-        if (!currentRes) return;
-        // ===== التحقق من صلاحية تجهيز الطلبات =====
-        try {
-            const freshRes = await _sb.from('restaurants').select('*').eq('id', currentRes.id).single();
-            if (freshRes.data) {
-                currentRes.allow_orders = freshRes.data.allow_orders;
-                currentRes.is_direct_contact = freshRes.data.is_direct_contact;
-                currentRes.is_menu_enabled = freshRes.data.is_menu_enabled;
-                localStorage.setItem('sh_store_session', JSON.stringify(currentRes));
-            }
-        } catch(e) { /* نكمل بالبيانات المحلية عند الخطأ */ }
-        if (currentRes.allow_orders === false) {
-            // صلاحية تجهيز الطلبات مُعطَّلة صراحةً من الإدارة
-            const list = document.getElementById('orders-list');
-            if (list) list.innerHTML = '<div class="empty-state"><i class="fas fa-lock" style="color:var(--danger);"></i><p style="color:var(--danger); font-size:12px;">خدمة تجهيز الطلبات غير مفعّلة<br><small style="opacity:0.7;">تواصل مع الإدارة لتفعيلها</small></p></div>';
-            document.getElementById('stat-active').innerText = '0';
-            _lastOrderCount = 0;
-            allOrders = [];
-            return;
-        }
-        // ===== نهاية التحقق من صلاحية تجهيز الطلبات =====
-        const { data: orders } = await _sb.from('sh_public_orders')
-            .select('*')
-            .eq('restaurant_name', currentRes.name)
-            .in('status', ['accepted', 'preparing', 'ready', 'consulting', 'pending_store', 'searching'])
-            .order('created_at', { ascending: false });
-
-        const _filtered = (orders || []).filter(o => {
-            if (_archivedOrderIds.has(String(o.id))) return false;
-            // [FIX-ORDERS-NOT-ARRIVING] هذا الشرط كان يُخفي كل الطلبات العادية من قائمة المطعم بالكامل
-            // طالما حالتها "searching" — لأن كل طلب منيو عادي يُنشأ بـ is_consultation=false دائماً!
-            // هذا يعني أن الطلبات الجديدة لم تكن تصل إطلاقاً لهذه الصفحة قبل هذا الإصلاح.
-            // if (o.status === 'searching' && o.is_consultation === false) { _archivedOrderIds.add(String(o.id)); return false; }
-            // ===== الفصل الكامل بين النظامين =====
-            // طلب التواصل المباشر (direct_chat) → خانة التواصل فقط، لا يظهر في خانة الطلبات
-            // طلب المنيو (menu_order) → خانة الطلبات فقط، لا يذهب للمحادثات
-            // ===== نهاية الفصل =====
-            // ===== إذا المطعم غير شريك (allow_orders=false) =====
-            // الطلب لا يظهر للمطعم إلا بعد أن يستلمه المندوب (حالة accepted فما فوق)
-            if (!currentRes.allow_orders) {
-                if (o.status === 'searching' || o.status === 'awaiting_driver' || o.status === 'pending_store') return false;
-            }
-            return true;
-        });
-        allOrders = _filtered;
-
-        // [AUTO-ACCEPT] قبول فوري تلقائي لكل طلب جديد بحالة "searching" (للمطاعم الشريكة التي تستقبل
-        // الطلب قبل المندوب) — بدون أي تدخل يدوي
-        const _newSearchingOrders = _filtered.filter(o => o.status === 'searching');
-        if (_newSearchingOrders.length > 0) {
-            _autoAcceptNewOrders(_newSearchingOrders).then(() => loadOrders(false));
-        }
-
-        // [FIX-AUTO-PRINT-ANY-STATUS] طباعة فورية لأي طلب يظهر لأول مرة في هذه القائمة، بصرف النظر عن
-        // حالته — يضمن الطباعة التلقائية حتى للمطاعم غير الشريكة التي لا ترى الطلب إلا بعد قبول
-        // المندوب له مباشرة (أي لا تمر بحالة "searching" إطلاقاً من منظور هذا المطعم)
-        const _everSeen = (() => { try { return new Set(JSON.parse(localStorage.getItem('sh_ever_seen_order_ids') || '[]')); } catch(e) { return new Set(); } })();
-        const _freshOrders = _filtered.filter(o => !_everSeen.has(String(o.id)) && o.status !== 'consulting' && o.status !== 'pending_store');
-        if (_freshOrders.length > 0) {
-            _freshOrders.forEach(o => { _everSeen.add(String(o.id)); printOrderReceipt(o); });
-            const _trimmed = Array.from(_everSeen).slice(-500);
-            localStorage.setItem('sh_ever_seen_order_ids', JSON.stringify(_trimmed));
-        }
-
-        const newCount = allOrders.length;
-        // ===== حساب عدد طلبات التجهيز وعدد طلبات التواصل بشكل منفصل =====
-        const newPrepOrders = allOrders.filter(o => o.status !== 'consulting' && o.status !== 'pending_store');
-        const newChatOrders = allOrders.filter(o => o.status === 'consulting' || o.status === 'pending_store');
-        const _prevPrepCount = window._lastPrepOrderCount || 0;
-        const _prevChatCount = window._lastChatOrderCount || 0;
-        if (!isFirst) {
-            // صوت الطلبات: يُشغَّل فقط عند وصول طلب جديد للتجهيز
-            if (newPrepOrders.length > _prevPrepCount) {
-                if (getSoundEnabled()) sound.play().catch(() => {});
-                showToast('طلب جديد وصل! 🦅');
-                document.getElementById('notif-bell').style.display = 'flex';
-                const bOrders = document.getElementById('badge-orders');
-                if (bOrders && !document.getElementById('tab-orders').classList.contains('active')) {
-                    bOrders.innerText = newPrepOrders.length;
-                    bOrders.style.display = 'flex';
-                }
-            }
-            // صوت التواصل: يُشغَّل فقط عند وصول محادثة جديدة — ممنوع تشغيل صوت الطلبات هنا
-            if (newChatOrders.length > _prevChatCount) {
-                if (getSoundEnabled()) chatSound.play().catch(() => {});
-                showToast('رسالة تواصل جديدة 💬');
-                const bChat = document.getElementById('badge-chat');
-                if (bChat && !document.getElementById('tab-chat').classList.contains('active')) {
-                    bChat.innerText = newChatOrders.length;
-                    bChat.style.display = 'flex';
-                }
-            }
-        }
-        window._lastPrepOrderCount = newPrepOrders.length;
-        window._lastChatOrderCount = newChatOrders.length;
-        // ===== نهاية الفصل بين صوتَي الطلبات والتواصل =====
-        const prepOrders = allOrders.filter(o => o.status !== 'consulting' && o.status !== 'pending_store');
-        const chatOrders = allOrders.filter(o => o.status === 'consulting' || o.status === 'pending_store');
-        if (prepOrders.length === 0 && chatOrders.length === 0) document.getElementById('notif-bell').style.display = 'none';
-        _lastOrderCount = newCount;
-        document.getElementById('stat-active').innerText = prepOrders.length;
-        // شارة تبويب التواصل عند وجود محادثات
-        const badgeChat = document.getElementById('badge-chat');
-        if (badgeChat) {
-            if (chatOrders.length > 0 && !document.getElementById('tab-chat').classList.contains('active')) {
-                badgeChat.innerText = chatOrders.length;
-                badgeChat.style.display = 'flex';
-            } else {
-                badgeChat.style.display = 'none';
-            }
-        }
-        filterAndRenderOrders();
-        // تحديث قائمة الدردشة إذا كانت مفتوحة
-        if (document.getElementById('page-chat').classList.contains('active')) renderChatOrders();
-    }
-
-    // ===== جلب الأرشيف =====
-    async function loadHistory() {
-        if (!currentRes) return;
-        const today = new Date(); today.setHours(0, 0, 0, 0);
-        const { data: all } = await _sb.from('sh_public_orders').select('*')
-            .eq('restaurant_name', currentRes.name)
-            .in('status', ['completed', 'completed_consultation', 'picked'])
-            .order('created_at', { ascending: false })
-            .limit(100);
-        if (all) {
-            historyOrders = all;
-            const todayList = all.filter(o => new Date(o.created_at) >= today);
-            const profit = todayList.reduce((s, o) => s + (Number(o.total) || Number(o.order_price) || 0), 0);
-            document.getElementById('stat-done').innerText   = todayList.length;
-            document.getElementById('stat-profit').innerText = profit > 0 ? profit.toLocaleString() + ' ل.س' : '0';
-            if (document.getElementById('page-archive').classList.contains('active')) renderArchive();
-        }
-    }
-
-    // ===== عرض الطلبات =====
-    function filterAndRenderOrders() {
-        const term = ((document.getElementById('orders-search') ? document.getElementById('orders-search').value : '')).toLowerCase();
-        // ===== الفصل الكامل: تبويب الطلبات يعرض طلبات المنيو فقط =====
-        // is_consultation=true = تواصل مباشر → ممنوع ظهوره هنا نهائياً
-        // is_consultation=false/null = طلب منيو → يظهر هنا فقط
-        const filtered = allOrders.filter(o => {
-            // استبعاد طلبات التواصل المباشر (is_consultation=true) من خانة الطلبات
-            if (o.is_consultation === true) return false;
-            // استبعاد consulting/pending_store من خانة الطلبات (حالة انتقالية)
-            if (o.status === 'consulting' || o.status === 'pending_store') return false;
-            return (o.customer_name || '').toLowerCase().includes(term) || String(o.id).includes(term);
-        });
-        // ===== نهاية الفصل =====
-        renderOrderCards(filtered);
-    }
-
-    function renderOrderCards(orders) {
-        const list = document.getElementById('orders-list');
-        const used = JSON.parse(localStorage.getItem('sh_used') || '{}');
-        const isU = (id, k) => used[`${id}_${k}`] ? 'sbtn-used' : '';
-        const prepTime = getPrepTime();
-        const prepBadge = prepTime > 0 ? `<div class="oc-prep">⏱️ مدة التجهيز التقريبية: ${prepTime} دقيقة</div>` : '';
-
-        if (!orders || orders.length === 0) {
-            list.innerHTML = '<div class="empty-state"><i class="fas fa-check-circle"></i><p>لا توجد طلبات نشطة الآن</p></div>';
-            return;
-        }
-        list.innerHTML = orders.map(o => {
-            const isChat = (o.status === 'consulting' || o.status === 'pending_store');
-            // ===== عرض الأصناف =====
-            let itemsHtml = '';
-            try {
-                const arr = JSON.parse(o.items || '[]');
-                if (arr.length > 0) itemsHtml = `<div class="oc-items">${arr.map(i => `• ${i.n} — ${(i.p||0).toLocaleString()} ل.س`).join('<br>')}</div>`;
-            } catch(e) {}
-            // ===== شارة الحالة =====
-            const statusMap = {
-                'accepted':    ['📥 استلمنا الطلب', 'sl-accepted'],
-                'preparing':   ['🍳 قيد التجهيز', 'sl-preparing'],
-                'ready':       ['✅ جاهز للاستلام', 'sl-ready'],
-                'picked':      ['🦅 تسليم للمندوب', 'sl-picked'],
-                'consulting':  ['💬 تواصل مباشر', 'sl-chat'],
-                'pending_store':['💬 طلب تواصل', 'sl-chat'],
-                'searching':   ['🔍 بحث عن مندوب', 'sl-accepted'],
-            };
-            const [slabel, sclass] = statusMap[o.status] || ['جديد', 'sl-new'];
-            // ===== أزرار حسب النوع =====
-            let btns = '';
-            if (isChat) {
-                btns = `
-                <button class="sbtn sbtn-chat" onclick="openChatScreen('${o.id}','${escHtml((o.customer_name||'').replace(/'/g,''))}')">
-                    <i class="fas fa-comments"></i> ${o.status==='consulting' ? 'متابعة الدردشة' : 'قبول وبدء التواصل'}
-                </button>
-                <button class="sbtn sbtn-reject" onclick="rejectOrder('${o.id}')"><i class="fas fa-times"></i> رفض الطلب</button>`;
-            } else {
-                btns = `
-                <button class="sbtn sbtn-ready  ${isU(o.id,'m3')}"  onclick="updateStatus('${o.id}','ready','✅ طلبك جاهز وبانتظار المندوب 🦅','m3')">✅ الطلب جاهز</button>
-                <button class="sbtn" style="background:rgba(212,175,55,0.12); color:var(--gold); border:1px solid var(--gold);" onclick="printOrderReceiptById('${o.id}')"><i class="fas fa-print"></i> إعادة طباعة الإيصال</button>`;
-            }
-            return `
-            <div class="order-card ${isChat ? 'chat-order' : (o.status==='accepted'||o.status==='preparing'||o.status==='ready' ? 'in-progress' : 'new-order')}">
-                <div class="oc-top"><span class="oc-id">#${String(o.id).slice(-6)}</span><span class="oc-time">${new Date(o.created_at).toLocaleTimeString('ar-SY',{hour:'2-digit',minute:'2-digit'})}</span></div>
-                <div class="oc-name">${escHtml(o.customer_name) || 'عميل شاهين'}</div>
-                <span class="status-label ${sclass}">${slabel}</span>
-                ${prepBadge}
-                ${itemsHtml}
-                ${o.total > 0 ? `<div class="oc-total">💰 المجموع: <b>${Number(o.total).toLocaleString()} ل.س</b></div>` : ''}
-                <div class="oc-driver"><i class="fas fa-motorcycle"></i> ${escHtml(o.driver_name) || 'بانتظار صقر الشاهين'}</div>
-                <div class="status-btns">${btns}</div>
-            </div>`;
-        }).join('');
-    }
-
-    // ===== تحديث حالة الطلب مع إشعار =====
-    async function updateStatus(id, status, msg, key) {
-        const used = JSON.parse(localStorage.getItem('sh_used') || '{}');
-        used[`${id}_${key}`] = true;
-        localStorage.setItem('sh_used', JSON.stringify(used));
-        showToast('⏳ جاري التحديث...');
-        await _sb.from('orders').update({ status, restaurant_note: msg }).eq('id', id);
-        await _sb.from('sh_public_orders').update({ status, restaurant_note: msg }).eq('id', id);
-        // إشعار للعميل والمندوب
-        const { data: ord } = await _sb.from('sh_public_orders').select('customer_id, driver_id').eq('id', id).single();
-        if ((ord && ord.customer_id)) {
-            await _sb.from('notifications').insert([{
-                user_id: ord.customer_id,
-                message: '🍽️ تحديث طلبك من ' + ((currentRes && currentRes.name) || 'المطعم') + ': ' + msg,
-                type: 'order_status', created_at: new Date().toISOString()
-            }]).catch(() => {});
-        }
-        if ((ord && ord.driver_id)) {
-            await _sb.from('notifications').insert([{
-                user_id: ord.driver_id,
-                message: '🍽️ تحديث طلب المطعم: ' + msg,
-                type: 'order_status', created_at: new Date().toISOString()
-            }]).catch(() => {});
-        }
-        showToast('✅ تم التحديث وإرسال الإشعار');
-        loadOrders(false);
-    }
-
-    // ===== رفض طلب =====
-    async function rejectOrder(id) {
-        if (!confirm('رفض هذا الطلب؟')) return;
-        await _sb.from('sh_public_orders').update({ status: 'cancelled', restaurant_note: 'المتجر: اعتذرنا عن استقبال الطلب حالياً' }).eq('id', id);
-        showToast('تم رفض الطلب');
-        loadOrders(false);
-    }
-
-    // ===== عرض قائمة الدردشة =====
-    function renderChatOrders() {
-        // التواصل المباشر يعتمد على is_direct_contact من DB فقط (لا يُعطي المطعم سيطرة محلية)
-        const chatEnabled = currentRes && currentRes.is_direct_contact === true;
-        const notice = document.getElementById('chat-disabled-notice');
-        if (notice) notice.style.display = chatEnabled ? 'none' : 'block';
-        const container = document.getElementById('chat-orders-list');
-        // ===== الفصل الكامل: تبويب التواصل يعرض طلبات التواصل المباشر فقط =====
-        // is_consultation=true = تواصل مباشر → يظهر هنا فقط
-        // is_consultation=false/null = طلب منيو → ممنوع ظهوره هنا نهائياً
-        const chatOrders = allOrders.filter(o => {
-            // طلب التواصل المباشر الصريح بـ is_consultation=true
-            if (o.is_consultation === true) return true;
-            // طلبات consulting/pending_store بدون is_consultation محدد (قديمة)
-            if ((o.status === 'consulting' || o.status === 'pending_store') && o.is_consultation !== false) return true;
-            return false;
-        });
-        // ===== نهاية الفصل =====
-        if (chatOrders.length === 0) {
-            container.innerHTML = '<div class="empty-state"><i class="fas fa-comments"></i><p>لا توجد محادثات نشطة</p></div>';
-            return;
-        }
-        container.innerHTML = chatOrders.map(o => `
-        <div class="chat-list-item" onclick="openChatScreen('${o.id}','${escHtml((o.customer_name||'').replace(/'/g,''))}')">
-            <div>
-                <div class="cli-name">${escHtml(o.customer_name) || 'عميل شاهين'}</div>
-                <div class="cli-sub">#${String(o.id).slice(-6)} · ${new Date(o.created_at).toLocaleTimeString('ar-SY',{hour:'2-digit',minute:'2-digit'})}</div>
-            </div>
-            <span class="cli-badge">${o.status === 'consulting' ? '💬 نشط' : '🔔 جديد'}</span>
-        </div>`).join('');
-    }
-
-    // ===== فتح شاشة الدردشة =====
-    async function openChatScreen(orderId, clientName) {
-        // ===== حماية الفصل: طلبات المنيو (is_consultation=false) لا تُفتح في الدردشة =====
-        const { data: _chkCh } = await _sb.from('sh_public_orders').select('is_consultation').eq('id', orderId).single();
-        if (_chkCh && _chkCh.is_consultation === false) {
-            showToast('⛔ هذا طلب منيو — يظهر في خانة الطلبات وليس التواصل');
-            return;
-        }
-        // ===== نهاية حماية الفصل =====
-        activeOrderId = String(orderId);
-        msgIds.clear();
-        document.getElementById('chat-cname').innerText = clientName || 'عميل شاهين';
-        document.getElementById('chat-oid').innerText   = 'تواصل مباشر #' + String(orderId).slice(-6);
-        document.getElementById('chat-flow').innerHTML  = '';
-        document.getElementById('chat-screen').style.display = 'flex';
-        // تحديث الحالة إلى consulting مع تأكيد أنه تواصل مباشر
-        await _sb.from('sh_public_orders').update({ status: 'consulting', restaurant_note: 'جاري التنسيق مع العميل 💬' }).eq('id', activeOrderId);
-        // جلب الرسائل السابقة
-        const { data: msgs } = await _sb.from('sh_messages').select('*').eq('order_id', activeOrderId).order('created_at', { ascending: true });
-        if (msgs && msgs.length > 0) {
-            msgs.forEach(m => { msgIds.add(m.id); addMsgToUI(m.message, m.sender, m.created_at); });
-        } else {
-            const welcome = 'أهلاً بك! 🌟 نحن هنا لخدمتك. تفضل بتفاصيل طلبك.';
-            addMsgToUI(welcome, 'store', new Date().toISOString());
-            await _sb.from('sh_messages').insert({ order_id: activeOrderId, sender: 'store', message: welcome });
-        }
-        scrollChat();
-        // Realtime
-        if (chatChannel) _sb.removeChannel(chatChannel);
-        chatChannel = _sb.channel('cs_' + activeOrderId)
-            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'sh_messages' }, payload => {
-                const m = payload.new;
-                if (String(m.order_id) !== String(activeOrderId)) return;
-                if (msgIds.has(m.id)) return;
-                msgIds.add(m.id);
-                addMsgToUI(m.message, m.sender, m.created_at);
-                if (m.sender === 'client') { if (getSoundEnabled()) chatSound.play().catch(()=>{}); showToast('رسالة جديدة 💬'); }
-                scrollChat();
-            }).subscribe();
-        // Polling احتياطي
-        if (_msgPollInterval) clearInterval(_msgPollInterval);
-        _msgPollInterval = setInterval(async () => {
-            if (!activeOrderId) { clearInterval(_msgPollInterval); return; }
-            const { data: pm } = await _sb.from('sh_messages').select('*').eq('order_id', activeOrderId).order('created_at', { ascending: true });
-            if (pm) { let hasNew = false; pm.forEach(m => { if (!msgIds.has(m.id)) { msgIds.add(m.id); addMsgToUI(m.message, m.sender, m.created_at); if(m.sender==='client') hasNew=true; } }); if(hasNew){scrollChat();if(getSoundEnabled()) chatSound.play().catch(()=>{});showToast('رسالة جديدة 💬');} }
-        }, 2500);
-        // متابعة حالة الطلب
-        if (statusChannel) _sb.removeChannel(statusChannel);
-        statusChannel = _sb.channel('cst_' + activeOrderId)
-            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'sh_public_orders', filter: 'id=eq.' + activeOrderId }, p => {
-                if (p.new.status === 'cancelled' || p.new.status === 'completed_consultation') closeChat();
-                if (p.new.status === 'searching' && p.new.is_consultation === false) { _archivedOrderIds.add(String(activeOrderId)); closeChat(); showToast('تم إرسال الطلب للمندوب ✅'); }
-            }).subscribe();
-    }
-
-    // ===== إرسال رسالة =====
-    async function sendMsg() {
-        const inp = document.getElementById('chat-input');
-        const text = inp.value.trim();
-        if (!text || !activeOrderId) return;
-        inp.value = ''; inp.disabled = true;
-        addMsgToUI(text, 'store', new Date().toISOString());
-        scrollChat();
-        const _oid = isNaN(activeOrderId) ? activeOrderId : Number(activeOrderId);
-        const { data: saved, error } = await _sb.from('sh_messages').insert({ order_id: _oid, sender: 'store', message: text }).select().single();
-        if (error) showToast('فشل إرسال الرسالة ❌');
-        if (saved) msgIds.add(saved.id);
-        inp.disabled = false; inp.focus();
-    }
-
-    // [SEC-FIX-1] XSS: تم استبدال innerHTML بـ DOM آمن لمنع حقن الكود
-    function escHtml(str) {
-        if (!str) return '';
-        return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
-    }
-    function addMsgToUI(text, sender, time) {
-        const flow = document.getElementById('chat-flow');
-        const timeStr = time ? new Date(time).toLocaleTimeString('ar-SY', {hour:'2-digit',minute:'2-digit'}) : '';
-        const wrap = document.createElement('div');
-        wrap.className = 'cmsg-wrap ' + (sender === 'store' ? 'store' : 'client');
-        const msgDiv = document.createElement('div');
-        msgDiv.className = 'cmsg ' + (sender === 'store' ? 'store' : 'client');
-        msgDiv.textContent = text; // [SEC-FIX-1] textContent بدلاً من innerHTML
-        const timeDiv = document.createElement('div');
-        timeDiv.className = 'cmsg-time';
-        timeDiv.textContent = timeStr;
-        wrap.appendChild(msgDiv);
-        wrap.appendChild(timeDiv);
-        flow.appendChild(wrap);
-    }
-    function scrollChat() { const f = document.getElementById('chat-flow'); if(f) f.scrollTop = f.scrollHeight; }
-
-    // ===== مودال الفاتورة =====
-    function showInvoiceBox() {
-        document.getElementById('inv-items').value = '';
-        document.getElementById('inv-total').innerText = '0';
-        document.getElementById('invoice-modal').style.display = 'flex';
-    }
-    function calcInvoiceTotal() {
-        const nums = document.getElementById('inv-items').value.match(/\d+/g);
-        const t = nums ? nums.reduce((s,n) => s + parseInt(n), 0) : 0;
-        document.getElementById('inv-total').innerText = t.toLocaleString();
-        return t;
-    }
-    async function sendInvoice() {
-        const details = document.getElementById('inv-items').value.trim();
-        const total   = calcInvoiceTotal();
-        if (!details || total === 0) { showToast('يرجى كتابة الأصناف والأسعار ❌'); return; }
-        const targetId = activeOrderId;
-        const invoice  = '🧾 فاتورة ' + ((currentRes && currentRes.name)||'المطعم') + ':\n──────────\n' + details + '\n──────────\n💰 الإجمالي: ' + total.toLocaleString() + ' ل.س';
-        const { error } = await _sb.from('sh_public_orders').update({
-            order_details: invoice, order_price: total, total: total,
-            restaurant_note: 'INVOICE_SENT:' + total, status: 'store_invoice_sent'
-        }).eq('id', targetId);
-        if (!error) {
-            await _sb.from('sh_messages').insert({ order_id: targetId, sender: 'store', message: invoice });
-            document.getElementById('invoice-modal').style.display = 'none';
-            _archivedOrderIds.add(String(targetId));
-            allOrders = allOrders.filter(o => String(o.id) !== String(targetId));
-            closeChat();
-            showToast('✅ تم إرسال الفاتورة للعميل');
-            loadHistory();
-        } else { showToast('خطأ: ' + error.message); }
-    }
-
-    // ===== إلغاء الطلب =====
-    async function cancelDueToNoResponse() {
-        if (!activeOrderId) return;
-        if (!confirm('هل أنت متأكد من إلغاء هذا الطلب؟')) return;
-        await _sb.from('sh_public_orders').update({ status: 'cancelled', order_details: 'إلغاء من المطعم — عدم رد العميل' }).eq('id', activeOrderId);
-        showToast('تم إلغاء الطلب');
-        closeChat();
-    }
-
-    // ===== إغلاق الدردشة =====
-    function closeChat() {
-        if (chatChannel)    { _sb.removeChannel(chatChannel); chatChannel = null; }
-        if (statusChannel)  { _sb.removeChannel(statusChannel); statusChannel = null; }
-        if (_msgPollInterval) { clearInterval(_msgPollInterval); _msgPollInterval = null; }
-        document.getElementById('chat-screen').style.display = 'none';
-        activeOrderId = null; msgIds.clear();
-        loadOrders();
-    }
-
-    // ===== الأرشيف =====
-    function renderArchive() {
-        const cont = document.getElementById('archive-list');
-        if (!historyOrders || historyOrders.length === 0) {
-            cont.innerHTML = '<div class="empty-state"><i class="fas fa-box-open"></i><p>لا توجد طلبات مكتملة</p></div>';
-            return;
-        }
-        cont.innerHTML = historyOrders.map(o => `
-        <div class="arch-item">
-            <div class="ai-name">${escHtml(o.customer_name) || '---'}</div>
-            <div style="font-size:11px;opacity:0.5;">#${escHtml(String(o.id))} · ${new Date(o.created_at).toLocaleString('ar-SY')}</div>
-            ${o.order_details ? `<div class="ai-detail">${escHtml(o.order_details)}</div>` : ''}
-            ${(o.total||o.order_price) ? `<div style="font-size:12px;color:var(--gold);margin-top:5px;">💰 ${(Number(o.total||0)||Number(o.order_price||0)).toLocaleString()} ل.س</div>` : ''}
-            <button class="sbtn" style="margin-top:8px; background:rgba(212,175,55,0.12); color:var(--gold); border:1px solid var(--gold); padding:7px;" onclick="printOrderReceiptById('${o.id}')"><i class="fas fa-print"></i> إعادة طباعة الإيصال</button>
-        </div>`).join('');
-    }
-
-    // ===== إدارة المنيو =====
-    let _menuData = [];
-
-    function renderMenuSections() {
-        if (!currentRes) return;
-        // ===== التحقق من صلاحية تعديل المنيو =====
-        const menuEnabled = currentRes.is_menu_enabled === true;
-        const cont = document.getElementById('menu-sections-container');
-        // زر إضافة قسم جديد — يظهر فقط عند التفعيل
-        const addSectionBtn = document.querySelector('#page-menu button[onclick="showAddSectionForm()"]');
-        if (addSectionBtn) {
-            if (!menuEnabled) {
-                addSectionBtn.style.display = 'none';
-            } else {
-                addSectionBtn.style.display = '';
-            }
-        }
-        if (!menuEnabled) {
-            cont.innerHTML = '<div class="empty-state"><i class="fas fa-lock" style="color:var(--danger);font-size:30px;"></i><p style="color:var(--danger); font-size:12px; margin-top:10px;">تعديل المنيو غير مفعّل<br><small style="opacity:0.7;">تواصل مع الإدارة لتفعيل خيار تعديل المنيو</small></p></div>';
-            return;
-        }
-        // ===== نهاية التحقق من صلاحية تعديل المنيو =====
-        _menuData = currentRes.restaurant_menu || [];
-        if (!_menuData || _menuData.length === 0) {
-            cont.innerHTML = '<div class="empty-state"><i class="fas fa-utensils"></i><p>لا توجد أقسام في المنيو بعد<br><small>اضغط "قسم جديد" للبدء</small></p></div>';
-            return;
-        }
-        // دعم الصيغتين القديمة والجديدة
-        const isNew = _menuData.some(m => m.type === 'cat');
-        let html = '';
-        if (isNew) {
-            const cats  = _menuData.filter(m => m.type === 'cat');
-            const items = _menuData.filter(m => m.type === 'item');
-            cats.forEach(cat => {
-                const catItems = items.filter(i => i.cid === cat.id);
-                html += _renderSectionHTML(cat.name, cat.icon || '🍽️', cat.id, catItems);
-            });
-        } else {
-            const groups = {};
-            _menuData.forEach(m => { const k = m.cat || 'القائمة'; if (!groups[k]) groups[k] = []; groups[k].push(m); });
-            Object.keys(groups).forEach(k => { html += _renderSectionHTML(k, '🍽️', k, groups[k]); });
-        }
-        cont.innerHTML = html;
-    }
-
-    function _renderSectionHTML(name, icon, catId, items) {
-        const itemsHTML = items.map((item, idx) => `
-        <div class="menu-item-row">
-            <div>
-                <span>${item.n || item.name}</span>
-                ${item.desc ? `<div style="font-size:10px;opacity:0.55;">${item.desc}</div>` : ''}
-            </div>
-            <div style="display:flex;align-items:center;gap:8px;">
-                <span class="menu-item-price">${(item.p || item.price || 0).toLocaleString()} ل.س</span>
-                <span class="menu-item-avail ${item.available !== false ? 'avail-yes' : 'avail-no'}" onclick="toggleItemAvail('${catId}', ${idx})">${item.available !== false ? '✅' : '❌'}</span>
-                <span onclick="deleteMenuItem('${catId}', ${idx})" style="cursor:pointer;color:var(--danger);font-size:12px;">🗑️</span>
-            </div>
-        </div>`).join('');
-
-        return `
-        <div class="menu-section" id="sec-${catId}">
-            <div class="menu-section-title">
-                <span>${icon} ${name}</span>
-                <button onclick="showAddItemForm('${catId}')" style="background:rgba(212,175,55,0.15);border:1px solid var(--gold);color:var(--gold);padding:4px 12px;border-radius:8px;font-size:11px;cursor:pointer;"><i class="fas fa-plus"></i> صنف</button>
-            </div>
-            ${itemsHTML || '<div style="font-size:11px;opacity:0.4;padding:8px 0;">لا توجد أصناف في هذا القسم</div>'}
-            <div id="add-item-form-${catId}" style="display:none;">
-                <div class="add-item-form">
-                    <input class="fi" id="ni-name-${catId}" placeholder="اسم الصنف" style="margin-bottom:8px;">
-                    <input class="fi" id="ni-price-${catId}" type="number" placeholder="السعر (ل.س)" style="margin-bottom:8px;">
-                    <input class="fi" id="ni-desc-${catId}" placeholder="وصف اختياري" style="margin-bottom:8px;">
-                    <div style="display:flex;gap:8px;">
-                        <button onclick="addMenuItem('${catId}')" class="btn-login" style="flex:1;padding:10px;font-size:12px;"><i class="fas fa-check"></i> إضافة</button>
-                        <button onclick="document.getElementById('add-item-form-${catId}').style.display='none'" style="flex:1;padding:10px;background:rgba(255,255,255,0.07);color:#fff;border:1px solid #555;border-radius:10px;cursor:pointer;font-size:12px;">إلغاء</button>
-                    </div>
-                </div>
-            </div>
-        </div>`;
-    }
-
-    function showAddSectionForm() {
-        document.getElementById('add-section-form').style.display = 'block';
-        document.getElementById('new-sec-name').focus();
-    }
-    function showAddItemForm(catId) {
-        document.getElementById('add-item-form-' + catId).style.display = 'block';
-        document.getElementById('ni-name-' + catId).focus();
-    }
-
-    async function addMenuSection() {
-        const name = document.getElementById('new-sec-name').value.trim();
-        const icon = document.getElementById('new-sec-icon').value.trim() || '🍽️';
-        if (!name) { showToast('يرجى كتابة اسم القسم'); return; }
-        const newId = 'cat_' + Date.now();
-        const newCat = { type: 'cat', id: newId, name, icon };
-        // تحويل للصيغة الجديدة إذا كان المنيو فارغاً أو قديماً
-        const isNew = _menuData.some(m => m.type === 'cat');
-        if (!isNew) {
-            // تحويل الصيغة القديمة لجديدة
-            const converted = [];
-            const groups = {};
-            _menuData.forEach(m => { const k = m.cat || 'القائمة'; if (!groups[k]) groups[k] = []; groups[k].push(m); });
-            let idx = 0;
-            Object.keys(groups).forEach(k => {
-                const cid = 'cat_legacy_' + idx++;
-                converted.push({ type: 'cat', id: cid, name: k, icon: '🍽️' });
-                groups[k].forEach(m => converted.push({ type: 'item', cid, n: m.n, p: m.p, img: m.img||'', desc: m.desc||'' }));
-            });
-            _menuData = converted;
-        }
-        _menuData.push(newCat);
-        await saveMenu();
-        document.getElementById('new-sec-name').value = '';
-        document.getElementById('add-section-form').style.display = 'none';
-        renderMenuSections();
-    }
-
-    async function addMenuItem(catId) {
-        const name  = document.getElementById('ni-name-' + catId).value.trim();
-        const price = parseFloat(document.getElementById('ni-price-' + catId).value) || 0;
-        const desc  = document.getElementById('ni-desc-' + catId).value.trim();
-        if (!name) { showToast('يرجى كتابة اسم الصنف'); return; }
-        _menuData.push({ type: 'item', cid: catId, n: name, p: price, desc, img: '', available: true });
-        await saveMenu();
-        document.getElementById('add-item-form-' + catId).style.display = 'none';
-        renderMenuSections();
-    }
-
-    async function toggleItemAvail(catId, idx) {
-        const items = _menuData.filter(m => m.type === 'item' && m.cid === catId);
-        const item = items[idx];
-        if (!item) return;
-        const globalIdx = _menuData.indexOf(item);
-        if (globalIdx < 0) return;
-        _menuData[globalIdx].available = !(_menuData[globalIdx].available !== false);
-        await saveMenu();
-        renderMenuSections();
-    }
-
-    async function deleteMenuItem(catId, idx) {
-        if (!confirm('حذف هذا الصنف؟')) return;
-        const items = _menuData.filter(m => m.type === 'item' && m.cid === catId);
-        const item = items[idx];
-        if (!item) return;
-        _menuData = _menuData.filter(m => m !== item);
-        await saveMenu();
-        renderMenuSections();
-    }
-
-    async function saveMenu() {
-        if (!currentRes) return;
-        const { error } = await _sb.from('restaurants').update({ restaurant_menu: _menuData }).eq('id', currentRes.id);
-        if (!error) {
-            currentRes.restaurant_menu = _menuData;
-            localStorage.setItem('sh_store_session', JSON.stringify(currentRes));
-            showToast('✅ تم حفظ المنيو');
-        } else { showToast('خطأ في الحفظ: ' + error.message); }
-    }
-
-    // ===== إعدادات =====
-    // (يتم حفظها محلياً في الجهاز — التغيير الدائم من الإدارة)
-
-    // ===== Toast =====
-    function showToast(m) {
-        const t = document.getElementById('toast');
-        t.innerText = m; t.style.display = 'block';
-        setTimeout(() => t.style.display = 'none', 3000);
-    }
-
-    function logout() {
-        // [FIX-LOGOUT-39] إيقاف المؤقت عند تسجيل الخروج
-        if (window._mainRefreshInterval39) { clearInterval(window._mainRefreshInterval39); window._mainRefreshInterval39 = null; }
-        if (_msgPollInterval) { clearInterval(_msgPollInterval); _msgPollInterval = null; }
-        localStorage.removeItem('sh_store_session');
-        location.reload();
-    }
-
-    window.onload = () => {
-        debugLog('info', '📄 window.onload نُفِّذ — الصفحة جاهزة بالكامل');
-        let s = null;
-        try { s = localStorage.getItem('sh_store_session'); } catch(e) { debugLog('error', 'تعذّر قراءة localStorage: ' + e.message); }
-        if (s) { try { currentRes = JSON.parse(s); startApp(); return; } catch(e) { debugLog('error', 'جلسة محفوظة تالفة، تم تجاهلها: ' + e.message); } }
-        // [TEST-AUTO-LOGIN] تسجيل دخول تلقائي بحساب تجريبي لأي شخص يفتح هذا الملف — للتجربة فقط
-        document.getElementById('login-email').value = 'store841@shahen-partner.com';
-        document.getElementById('login-code').value = 'SH-4F7F8PLY';
-        checkAuth();
-    };
-    // [POS-PRINT] إعادة محاولة الاتصال بقاعدة البيانات وتفريغ طابور الطباعة فور عودة الإنترنت
-    window.addEventListener('online', () => {
-        posLog('info', '🌐 عاد الاتصال بالإنترنت — إعادة محاولة مزامنة الطلبات والطباعة المعلَّقة');
-        if (currentRes) { loadOrders(false); connectPosAgent(); }
-    });
+  // ─── سجل الأحداث ───
+  function addLog(msg) {
+    const logEl = document.getElementById('log');
+    const t = new Date().toLocaleTimeString('ar-SA', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+    const entry = document.createElement('div');
+    entry.className = 'log-entry';
+    entry.innerHTML = `<span class="time">${t}</span>${msg}`;
+    logEl.prepend(entry);
+    if (logEl.children.length > 20) logEl.lastElementChild.remove();
+  }
 </script>
 </body>
 </html>
