@@ -1050,22 +1050,42 @@ window.createMinimalSupabaseClient = createMinimalSupabaseClient;
         }
     }
 
+    // [FIX-NATIVE-PRINT-BRIDGE] اكتُشِف أن "Website 2 APK Builder Pro" — الأداة المُستخدَمة فعلياً —
+    // توفّر جسراً أصلياً حقيقياً موثَّقاً رسمياً: Website2APK.printPage() — يستدعي نظام طباعة أندرويد
+    // الأصلي مباشرة (بدل window.print() العادية التي تتجاهلها أغلب أغلفة WebView العامة بصمت).
+    // بما أن هذا الجسر يطبع الصفحة الرئيسية نفسها (لا الـiframe المخفي كما كان سابقاً)، أصبح محتوى
+    // الإيصال يُحقَن في عنصر مخفي ضمن الصفحة الرئيسية، مع إخفاء كل شيء آخر أثناء الطباعة فقط عبر CSS
     function _printViaIframeFallback(html) {
-        let frame = document.getElementById('receipt-print-frame');
-        if (!frame) {
-            frame = document.createElement('iframe');
-            frame.id = 'receipt-print-frame';
-            frame.style.position = 'fixed'; frame.style.right = '-9999px'; frame.style.width = '0'; frame.style.height = '0'; frame.style.border = 'none';
-            document.body.appendChild(frame);
+        let area = document.getElementById('native-print-area');
+        if (!area) {
+            area = document.createElement('div');
+            area.id = 'native-print-area';
+            area.style.display = 'none';
+            document.body.appendChild(area);
         }
-        const doc = frame.contentWindow.document;
-        // [FIX-PRINT-PAGE-SIZE] إعداد @page بعرض الورق الصحيح وبلا أي حواف، لضمان طباعة نظيفة بكامل
-        // عرض الإيصال الحراري بدل تنسيق ورقة A4 الافتراضي الذي قد يضغط/يكبّر المحتوى بشكل خاطئ
         const widthMm = (_posDeviceInfo && _posDeviceInfo.paper_width_mm) || 58;
-        doc.open();
-        doc.write('<html dir="rtl"><head><style>@page { size: ' + widthMm + 'mm auto; margin: 0; } body { margin: 0; padding: 0; }</style></head><body>' + html + '</body></html>');
-        doc.close();
-        setTimeout(() => { try { frame.contentWindow.focus(); frame.contentWindow.print(); } catch(e) {} }, 300);
+        area.innerHTML = '<style id="native-print-style">' +
+            '@media print {' +
+            '  body * { visibility: hidden !important; }' +
+            '  #native-print-area, #native-print-area * { visibility: visible !important; }' +
+            '  #native-print-area { display: block !important; position: absolute; top: 0; left: 0; right: 0; }' +
+            '  @page { size: ' + widthMm + 'mm auto; margin: 0; }' +
+            '}' +
+            '</style>' + html;
+
+        try {
+            if (typeof Website2APK !== 'undefined' && typeof Website2APK.printPage === 'function') {
+                // [FIX-NATIVE-PRINT-BRIDGE] الجسر الأصلي الحقيقي — يصل مباشرة لطابعة النظام المسجَّلة
+                Website2APK.printPage();
+                posLog('success', '🖨️ تم استدعاء Website2APK.printPage() — الجسر الأصلي للطباعة');
+            } else {
+                // نافذة طباعة المتصفح القياسية — تعمل عند التجربة من متصفح عادي خارج التطبيق فقط
+                window.print();
+                posLog('info', 'Website2APK.printPage() غير متاحة هنا (تجربة من متصفح عادي) — استُخدمت window.print() كاحتياط');
+            }
+        } finally {
+            setTimeout(() => { area.style.display = 'none'; }, 1000);
+        }
     }
 
     function printOrderReceiptById(orderId) {
@@ -1152,10 +1172,11 @@ window.createMinimalSupabaseClient = createMinimalSupabaseClient;
             // طلب التواصل المباشر (direct_chat) → خانة التواصل فقط، لا يظهر في خانة الطلبات
             // طلب المنيو (menu_order) → خانة الطلبات فقط، لا يذهب للمحادثات
             // ===== نهاية الفصل =====
-            // ===== إذا المطعم غير شريك (allow_orders=false) =====
-            // الطلب لا يظهر للمطعم إلا بعد أن يستلمه المندوب (حالة accepted فما فوق)
-            if (!currentRes.allow_orders) {
-                if (o.status === 'searching' || o.status === 'awaiting_driver' || o.status === 'pending_store') return false;
+            // ===== [FIX-ORDER-ROUTING] سياسة جديدة وموحَّدة لكل المطاعم: الطلب لا يصل لشاشة المطعم
+            // إطلاقاً إلا بعد أن يقبله مندوب فعلياً (الحالة تصبح غير "بحث")، أو بعد أن ترسله الإدارة
+            // يدوياً عبر علم admin_sent_to_restaurant — هذا يحمي المطعم من أي طلب لم يُؤكَّد توصيله بعد
+            if (o.status === 'searching' || o.status === 'awaiting_driver' || o.status === 'pending_store') {
+                if (o.admin_sent_to_restaurant !== true) return false;
             }
             return true;
         });
