@@ -8,155 +8,7 @@
     <meta name="referrer" content="no-referrer">
     <title>بوابة المطعم | شاهين إكسبريس 🦅</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- ===== [FIX-WEBVIEW-COMPAT] ملف Supabase محلي مُحوَّل (Babel) ليعمل على متصفحات/WebView قديمة
-         جداً (مثل أندرويد 7) — يجب رفع supabase-compat.js في نفس مجلد هذا الملف بالضبط ===== -->
-    <!-- ===== [SH-MINIMAL-CLIENT] عميل مبسَّط مضمَّن مباشرة داخل الصفحة نفسها — لا يعتمد على أي ملف
-         خارجي منفصل إطلاقاً، لتجاوز أي مشكلة في تحميل ملفات <script src> الجانبية داخل WebView ===== -->
-    <script>
-window._supabaseScriptLoaded = true;
-// ===========================================================================
-// [SH-MINIMAL-CLIENT] عميل مبسَّط مكتوب يدوياً، بديل كامل عن مكتبة Supabase الرسمية —
-// يستخدم فقط XMLHttpRequest (أقدم وأوسع توافقاً من fetch) وبدون أي صياغة JS حديثة
-// (لا ?. ولا ?? ولا async/await) — متوافق 100% مع أي محرك متصفح، بلا أي استثناء
-// ===========================================================================
-function createMinimalSupabaseClient(baseUrl, apiKey) {
-    function QueryBuilder(table) {
-        this._table = table;
-        this._select = '*';
-        this._filters = [];
-        this._order = null;
-        this._limit = null;
-        this._single = false;
-        this._maybeSingle = false;
-        this._method = 'GET';
-        this._body = null;
-        this._returning = false;
-    }
-    QueryBuilder.prototype.select = function (cols) {
-        this._select = cols || '*';
-        if (this._method === 'GET') this._method = 'GET';
-        else this._returning = true;
-        return this;
-    };
-    QueryBuilder.prototype.eq = function (col, val) { this._filters.push(col + '=eq.' + encodeURIComponent(val)); return this; };
-    QueryBuilder.prototype.neq = function (col, val) { this._filters.push(col + '=neq.' + encodeURIComponent(val)); return this; };
-    QueryBuilder.prototype.gte = function (col, val) { this._filters.push(col + '=gte.' + encodeURIComponent(val)); return this; };
-    QueryBuilder.prototype.lte = function (col, val) { this._filters.push(col + '=lte.' + encodeURIComponent(val)); return this; };
-    QueryBuilder.prototype.ilike = function (col, val) { this._filters.push(col + '=ilike.' + encodeURIComponent(val)); return this; };
-    QueryBuilder.prototype['in'] = function (col, arr) {
-        var vals = [];
-        for (var i = 0; i < arr.length; i++) vals.push(arr[i]);
-        this._filters.push(col + '=in.(' + vals.join(',') + ')');
-        return this;
-    };
-    QueryBuilder.prototype.order = function (col, opts) {
-        var asc = true;
-        if (opts && opts.ascending === false) asc = false;
-        this._order = col + '.' + (asc ? 'asc' : 'desc');
-        return this;
-    };
-    QueryBuilder.prototype.limit = function (n) { this._limit = n; return this; };
-    QueryBuilder.prototype.single = function () { this._single = true; return this; };
-    QueryBuilder.prototype.maybeSingle = function () { this._maybeSingle = true; return this; };
-    QueryBuilder.prototype.insert = function (rows) {
-        this._method = 'POST';
-        this._body = rows;
-        return this;
-    };
-    QueryBuilder.prototype.update = function (obj) {
-        this._method = 'PATCH';
-        this._body = obj;
-        return this;
-    };
-    QueryBuilder.prototype.upsert = function (rows, opts) {
-        this._method = 'POST';
-        this._body = rows;
-        this._upsert = true;
-        this._onConflict = opts && opts.onConflict;
-        return this;
-    };
-    QueryBuilder.prototype['delete'] = function () {
-        this._method = 'DELETE';
-        return this;
-    };
-    QueryBuilder.prototype._buildUrl = function () {
-        var url = baseUrl + '/rest/v1/' + this._table + '?select=' + encodeURIComponent(this._select);
-        for (var i = 0; i < this._filters.length; i++) url += '&' + this._filters[i];
-        if (this._order) url += '&order=' + this._order;
-        if (this._limit !== null) url += '&limit=' + this._limit;
-        return url;
-    };
-    QueryBuilder.prototype.then = function (resolve, reject) {
-        var self = this;
-        var xhr = new XMLHttpRequest();
-        var url = self._buildUrl();
-        xhr.open(self._method, url, true);
-        xhr.setRequestHeader('apikey', apiKey);
-        xhr.setRequestHeader('Authorization', 'Bearer ' + apiKey);
-        xhr.setRequestHeader('Content-Type', 'application/json');
-        if (self._single) xhr.setRequestHeader('Accept', 'application/vnd.pgrst.object+json');
-        if (self._method !== 'GET' && self._method !== 'DELETE') {
-            xhr.setRequestHeader('Prefer', self._upsert ? 'resolution=merge-duplicates,return=representation' : 'return=representation');
-            if (self._upsert && self._onConflict) {
-                url = url.replace(self._table, self._table); // on_conflict param appended below
-                xhr.open(self._method, self._buildUrl() + '&on_conflict=' + encodeURIComponent(self._onConflict), true);
-                xhr.setRequestHeader('apikey', apiKey);
-                xhr.setRequestHeader('Authorization', 'Bearer ' + apiKey);
-                xhr.setRequestHeader('Content-Type', 'application/json');
-                xhr.setRequestHeader('Prefer', 'resolution=merge-duplicates,return=representation');
-            }
-        } else if (self._method === 'DELETE') {
-            xhr.setRequestHeader('Prefer', 'return=representation');
-        }
-        xhr.onreadystatechange = function () {
-            if (xhr.readyState !== 4) return;
-            var result = { data: null, error: null };
-            try {
-                var parsed = xhr.responseText ? JSON.parse(xhr.responseText) : null;
-                if (xhr.status >= 200 && xhr.status < 300) {
-                    if (self._single || self._maybeSingle) {
-                        if (Array.isArray(parsed)) result.data = parsed.length > 0 ? parsed[0] : null;
-                        else result.data = parsed;
-                    } else {
-                        result.data = parsed;
-                    }
-                } else {
-                    result.error = parsed || { message: 'HTTP ' + xhr.status };
-                }
-            } catch (e) {
-                if (xhr.status >= 200 && xhr.status < 300) result.data = null;
-                else result.error = { message: 'Request failed: ' + xhr.status };
-            }
-            resolve(result);
-        };
-        xhr.onerror = function () {
-            resolve({ data: null, error: { message: 'Network error — تعذّر الوصول للخادم' } });
-        };
-        if (self._body !== null && self._method !== 'GET' && self._method !== 'DELETE') {
-            xhr.send(JSON.stringify(self._body));
-        } else {
-            xhr.send();
-        }
-    };
-
-    // ===== [SH-MINIMAL-CLIENT] طبقة توافق وهمية للقنوات اللحظية (Realtime) =====
-    // التطبيق يحتوي أصلاً على استطلاع دوري (Polling) كافٍ كاحتياط لكل ميزة تستخدم القنوات اللحظية،
-    // فهذه دوال وهمية غير فعّالة (No-op) لا تكسر الكود الذي يستدعيها، لكنها لا تتصل بأي خادم WebSocket
-    function DummyChannel() {}
-    DummyChannel.prototype.on = function () { return this; };
-    DummyChannel.prototype.subscribe = function () { return this; };
-
-    return {
-        from: function (table) { return new QueryBuilder(table); },
-        channel: function () { return new DummyChannel(); },
-        removeChannel: function () {}
-    };
-}
-window.createMinimalSupabaseClient = createMinimalSupabaseClient;
-
-    </script>
-    <!-- ===== [FIX-NATIVE-PRINT-HONEST] حُذِفت مكتبة QZ Tray نهائياً — وكيل سطح مكتب فقط، لا يعمل على
-         أندرويد إطلاقاً. الطباعة الآن تعتمد على نافذة طباعة النظام القياسية فقط ===== -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
         :root {
             --gold: #d4af37; --gold-l: #f1d279;
@@ -328,12 +180,6 @@ window.createMinimalSupabaseClient = createMinimalSupabaseClient;
         <input class="inp" type="email" id="login-email" placeholder="البريد الإلكتروني">
         <input class="inp" type="password" id="login-code" placeholder="كود التفعيل">
         <button class="btn-login" onclick="checkAuth()"><i class="fas fa-sign-in-alt"></i> دخول</button>
-        <!-- ===== [FIX-WEBVIEW-LOGIN] سجل تشخيص ظاهر مباشرة على الجهاز — يفيد عند التشغيل داخل تطبيق
-             أندرويد (WebView) حيث لا تتوفر أدوات مطوّر سطح المكتب لرؤية الأخطاء ===== -->
-        <details style="margin-top:14px; text-align:right;">
-            <summary style="font-size:10px; color:#888; cursor:pointer;">🔧 سجل التشخيص (اضغط هنا عند وجود مشكلة)</summary>
-            <pre id="sh-debug-panel" style="background:rgba(0,0,0,0.4); color:#0f0; font-size:9px; padding:8px; border-radius:6px; max-height:140px; overflow-y:auto; white-space:pre-wrap; direction:ltr; text-align:left; margin-top:6px;">جاري التحميل...</pre>
-        </details>
     </div>
 </div>
 
@@ -504,29 +350,6 @@ window.createMinimalSupabaseClient = createMinimalSupabaseClient;
             </label>
         </div>
 
-        <!-- ===== [SUNMI-AIDL-BRIDGE] إعدادات الطباعة لهذا الجهاز ===== -->
-        <div style="background:rgba(52,152,219,0.06); border:1px solid #3498db; border-radius:14px; padding:15px; margin-top:14px;">
-            <p style="font-size:13px; color:#3498db; font-weight:bold; margin:0 0 10px;"><i class="fas fa-print"></i> طابعة Sunmi المدمجة</p>
-            <p style="font-size:10.5px; opacity:0.75; margin:0 0 10px; line-height:1.7;">
-                الطباعة تعمل عبر جسر مباشر (SUNMI Printer SDK / AIDL) داخل التطبيق — تطبع مباشرة على الطابعة الحرارية المدمجة بدون أي نافذة أو تدخل يدوي.
-            </p>
-            <div id="local-print-status-badge" style="display:inline-block; border:1px solid #888; border-radius:20px; padding:6px 14px; font-size:11.5px; font-weight:bold; margin-bottom:12px;">
-                <i class="fas fa-spinner fa-spin"></i> جاري الفحص...
-            </div>
-            <button class="btn-login" style="padding:9px; font-size:11.5px; margin-bottom:10px; background:rgba(255,255,255,0.08); color:#fff;" onclick="_refreshLocalPrintStatus()"><i class="fas fa-sync"></i> إعادة فحص الخدمة الآن</button>
-            <div style="margin-bottom:10px;">
-                <label style="font-size:11px; opacity:0.75; display:block; margin-bottom:5px;">عرض ورق الإيصال</label>
-                <select id="pos-paper-width-select" class="fi" style="margin:0;" onchange="savePosDevicePairing()">
-                    <option value="58">58 مم (الأشيع لطابعات نقاط البيع)</option>
-                    <option value="80">80 مم</option>
-                </select>
-            </div>
-            <details style="margin-top:10px;">
-                <summary style="font-size:11px; color:var(--gold); cursor:pointer;">📋 سجل عمليات الطباعة</summary>
-                <div id="pos-log-list" style="max-height:160px; overflow-y:auto; margin-top:8px; background:rgba(0,0,0,0.3); border-radius:8px; padding:8px;"></div>
-            </details>
-        </div>
-
         <div style="background:rgba(212,175,55,0.06); border:1px solid rgba(212,175,55,0.25); border-radius:14px; padding:15px; margin-top:10px;">
             <p style="font-size:12px; color:var(--gold); font-weight:bold; margin:0 0 8px;"><i class="fas fa-info-circle"></i> ملاحظة</p>
             <p style="font-size:11px; opacity:0.7; margin:0; line-height:1.7;">
@@ -543,55 +366,10 @@ window.createMinimalSupabaseClient = createMinimalSupabaseClient;
 </div>
 
 <script>
-    // [FIX-WEBVIEW-LOGIN] هذا يجب أن يكون أول شيء يُنفَّذ في الصفحة بالكامل — قبل أي كود آخر — لضمان
-    // التقاط أي خطأ يحدث لاحقاً، بما في ذلك أخطاء تهيئة Supabase نفسها
-    window._shDebugLogs = [];
-    function debugLog(type, msg) {
-        const entry = `[${new Date().toLocaleTimeString('ar-SY')}] [${type}] ${msg}`;
-        window._shDebugLogs.push(entry);
-        if (window._shDebugLogs.length > 100) window._shDebugLogs.shift();
-        if (type === 'error') console.error('[SH-DEBUG]', msg); else console.log('[SH-DEBUG]', msg);
-        try {
-            const panel = document.getElementById('sh-debug-panel');
-            if (panel) panel.innerText = window._shDebugLogs.slice(-25).join('\n');
-        } catch(e) {}
-    }
-    window.addEventListener('error', (e) => {
-        debugLog('error', `❌ خطأ JS غير متوقع: ${e.message} — في: ${e.filename}:${e.lineno}`);
-    });
-    window.addEventListener('unhandledrejection', (e) => {
-        debugLog('error', `❌ خطأ Promise غير معالَج: ${e.reason}`);
-    });
-    debugLog('info', '🟢 بدأ تنفيذ سكربت الصفحة بنجاح');
-
-    // [FIX-WEBVIEW-LOGIN-V2] بدل افتراض أن مكتبة Supabase انتهت من التحميل فوراً بترتيب تسلسلي مضمون
-    // (قد لا يكون هذا مضموناً 100% على كل أنواع WebView)، نحاول التهيئة الآن، وإن فشلت لعدم اكتمال
-    // التحميل بعد، نعيد المحاولة تلقائياً كل 300ms لمدة تصل حتى 10 ثوانٍ قبل اعتبارها فاشلة نهائياً
-    let _sb = null;
-    let _sbInitAttempts = 0;
-    function _tryInitSupabase() {
-        _sbInitAttempts++;
-        try {
-            if (typeof createMinimalSupabaseClient === 'undefined') {
-                if (_sbInitAttempts === 1) debugLog('info', '⏳ ملف العميل المبسَّط لم يكتمل تحميله بعد، جاري الانتظار وإعادة المحاولة...');
-                if (_sbInitAttempts < 33) { setTimeout(_tryInitSupabase, 300); return; }
-                if (window._supabaseScriptError === true) {
-                    debugLog('error', '🔥 ملف sb-minimal-client.js فشل تحميله تماماً (خطأ 404) — تأكد أنه مرفوع بجانب الملف الرئيسي بنفس الاسم تماماً: sb-minimal-client.js');
-                } else {
-                    debugLog('error', '🔥 ملف sb-minimal-client.js لم يُحمَّل ولم تصل أي استجابة');
-                }
-                return;
-            }
-            _sb = createMinimalSupabaseClient(
-                'https://ricoslplbhphydhtrufe.supabase.co',
-                'sb_publishable_k6LgEuwPLdCsBMCFC12wfQ_BSOJotuw'
-            );
-            debugLog('info', '✅ تم تهيئة العميل المبسَّط بنجاح (بعد ' + _sbInitAttempts + ' محاولة)');
-        } catch(_sbInitErr) {
-            debugLog('error', '🔥 خطأ أثناء تهيئة العميل: ' + _sbInitErr.message);
-        }
-    }
-    _tryInitSupabase();
+    const _sb = supabase.createClient(
+        'https://ricoslplbhphydhtrufe.supabase.co',
+        'sb_publishable_k6LgEuwPLdCsBMCFC12wfQ_BSOJotuw'
+    );
 
     let currentRes = null, allOrders = [], historyOrders = [], refreshTimer = 0;
     let activeOrderId = null, chatChannel = null, statusChannel = null;
@@ -642,6 +420,63 @@ window.createMinimalSupabaseClient = createMinimalSupabaseClient;
         return getLocalSetting('sound_enabled', true);
     }
 
+    // ======================================================
+    // ===== SUNMI Native Print Bridge (طبقة ربط الطباعة) =====
+    // لا تُعدّل منطق التطبيق — فقط جسر اتصال بين JS وأندرويد
+    // ======================================================
+    let _printFailedIds = new Set();
+
+    // تحويل بيانات الطلب إلى بنية إيصال جاهزة للطباعة
+    function buildReceiptData(o) {
+        let items = [];
+        try { items = JSON.parse(o.items || '[]'); } catch(e) {}
+        return {
+            orderId: String(o.id),
+            customerName: o.customer_name || 'عميل شاهين',
+            restaurantName: currentRes ? currentRes.name : '',
+            items: items.map(i => ({ name: i.n, price: i.p })),
+            total: Number(o.total) || 0,
+            time: new Date(o.created_at).toLocaleTimeString('ar-SY', { hour: '2-digit', minute: '2-digit' })
+        };
+    }
+
+    // نقطة الاستدعاء الوحيدة للطباعة الصامتة — لا تستخدم window.print() إطلاقاً
+    function printReceipt(receiptData) {
+        try {
+            if (window.AndroidPrinter && typeof window.AndroidPrinter.printReceipt === 'function') {
+                window.AndroidPrinter.printReceipt(JSON.stringify(receiptData));
+            } else {
+                // الجسر غير متوفر (تشغيل من متصفح عادي مثلاً) — لا نُفشل الطلب، فقط نسجّل
+                console.warn('SUNMI bridge غير متاح — تخطي الطباعة الصامتة لطلب #' + receiptData.orderId);
+                _printFailedIds.add(receiptData.orderId);
+            }
+        } catch (e) {
+            console.error('فشل استدعاء جسر الطباعة:', e);
+            _printFailedIds.add(receiptData.orderId);
+        }
+    }
+
+    // يستدعيها الكود الأصلي (Android) عبر webView.evaluateJavascript بعد كل محاولة طباعة
+    function onPrintResult(orderId, success, error) {
+        orderId = String(orderId);
+        if (success) {
+            _printFailedIds.delete(orderId);
+        } else {
+            _printFailedIds.add(orderId);
+            console.error('فشل طباعة الإيصال #' + orderId + ': ' + (error || 'سبب غير معروف'));
+        }
+        filterAndRenderOrders(); // لإظهار/إخفاء زر "إعادة طباعة" فوراً
+    }
+
+    // زر إعادة الطباعة اليدوي عند فشل الطباعة التلقائية
+    function reprintOrder(orderId) {
+        const o = allOrders.find(x => String(x.id) === String(orderId));
+        if (!o) { showToast('الطلب غير موجود ضمن القائمة الحالية ❌'); return; }
+        printReceipt(buildReceiptData(o));
+        showToast('🖨️ إعادة إرسال الطلب #' + String(orderId).slice(-6) + ' للطباعة');
+    }
+    // ===== End SUNMI Native Print Bridge =====
+
     // ===== توليد اسم مستخدم تلقائي فريد =====
     function generateAutoUsername(prefix) {
         const ts = Date.now().toString(36).toUpperCase().slice(-5);
@@ -653,100 +488,47 @@ window.createMinimalSupabaseClient = createMinimalSupabaseClient;
     // ===== تسجيل الدخول =====
     // [SEC-FIX-2] Brute Force: حماية تسجيل الدخول من المحاولات المتعددة
     // [SEC-PATCH-11] استمرارية القفل عبر إعادة التحميل باستخدام sessionStorage
-    // [FIX-WEBVIEW-LOGIN] حماية حرجة: هذا السطر كان بلا أي حماية وينفَّذ فوراً عند تحميل الصفحة (قبل
-    // تعريف أي دالة أخرى بما فيها زر تسجيل الدخول نفسه). بعض أغلفة WebView في تطبيقات أندرويد تمنع أو
-    // تُقيّد الوصول لـ sessionStorage (خصوصاً عند تحميل الصفحة من مخطط غير قياسي)، فيرمي الوصول إليها
-    // استثناءً (SecurityError) يوقف تنفيذ كامل الكود البرمجي في الصفحة فوراً — وهذا يفسّر بدقة العطل
-    // المُكتشف: الزر "موجود" بصرياً (HTML سابق للسكربت) لكن onclick لم يُعرَّف أبداً لأن السكربت توقف هنا
-    let _loginAttempts = 0, _loginLockUntil = 0;
-    try {
-        _loginAttempts = parseInt(sessionStorage.getItem('_res_attempts') || '0');
-        _loginLockUntil = parseInt(sessionStorage.getItem('_res_lock_until') || '0');
-        debugLog('info', 'sessionStorage متاح ويعمل بنجاح ✅');
-    } catch(_storageErr) {
-        debugLog('error', '⚠️ sessionStorage غير متاح في هذا WebView — تم تجاوز الخطأ والاستمرار بقيم افتراضية: ' + _storageErr.message);
-    }
-
+    let _loginAttempts = parseInt(sessionStorage.getItem('_res_attempts') || '0'), _loginLockUntil = parseInt(sessionStorage.getItem('_res_lock_until') || '0');
     async function checkAuth() {
-        debugLog('info', '👆 تم الضغط على زر تسجيل الدخول — بدء التنفيذ'); // [FIX-WEBVIEW-LOGIN] تأكيد فعلي أن onclick يصل لهذه الدالة
-        try {
-            const now = Date.now();
-            if (now < _loginLockUntil) {
-                const secs = Math.ceil((_loginLockUntil - now) / 1000);
-                showToast('⛔ محظور مؤقتاً. انتظر ' + secs + ' ثانية');
-                debugLog('info', `محظور مؤقتاً، متبقٍ ${secs} ثانية`);
-                return;
+        const now = Date.now();
+        if (now < _loginLockUntil) {
+            const secs = Math.ceil((_loginLockUntil - now) / 1000);
+            showToast('⛔ محظور مؤقتاً. انتظر ' + secs + ' ثانية');
+            return;
+        }
+        const email = document.getElementById('login-email').value.trim().toLowerCase();
+        const code  = document.getElementById('login-code').value.trim();
+        if (!email || !code) { showToast('يرجى إدخال البريد والكود ❌'); return; }
+        // [FIX] البحث بالإيميل فقط أولاً ثم مقارنة الكود يدوياً لتفادي حساسية الحروف
+        const { data: rowData, error: rowError } = await _sb.from('restaurants').select('*').ilike('email', email).maybeSingle();
+        // [SEC-PATCH-21] إزالة console.log الذي كان يطبع الإيميل وبيانات الدخول في بيئة الإنتاج
+        const data = rowData && (String(rowData.access_code).trim() === String(code).trim()) ? rowData : null;
+        if (data) {
+            _loginAttempts = 0; // إعادة العداد عند النجاح
+            sessionStorage.removeItem('_res_attempts');
+            sessionStorage.removeItem('_res_lock_until');
+            currentRes = data;
+            // ===== توليد اسم مستخدم تلقائي إذا لم يكن موجوداً =====
+            if (!currentRes.auto_username) {
+                const autoUser = generateAutoUsername('RES');
+                try { await _sb.from('restaurants').update({ auto_username: autoUser }).eq('id', currentRes.id); } catch(e) {}
+                currentRes.auto_username = autoUser;
             }
-            const emailEl = document.getElementById('login-email');
-            const codeEl = document.getElementById('login-code');
-            if (!emailEl || !codeEl) { debugLog('error', '❌ لم يُعثر على حقول الإيميل/الكود في الصفحة! تحقق من بنية HTML'); return; }
-            const email = emailEl.value.trim().toLowerCase();
-            const code  = codeEl.value.trim();
-            if (!email || !code) { showToast('يرجى إدخال البريد والكود ❌'); debugLog('info', 'إيميل أو كود فاضي، توقفت العملية'); return; }
-
-            // [FIX-WEBVIEW-LOGIN-V2] إن لم تكتمل تهيئة Supabase بعد عند الضغط على الزر، نحاول تهيئتها
-            // الآن مباشرة بشكل أخير قبل الفشل النهائي — يفيد لو كان الانتظار التلقائي لم يكتمل بعد
-            if (!_sb) {
-                debugLog('info', '⏳ العميل غير جاهز بعد، محاولة تهيئة أخيرة فورية...');
-                try {
-                    if (typeof createMinimalSupabaseClient !== 'undefined') {
-                        _sb = createMinimalSupabaseClient('https://ricoslplbhphydhtrufe.supabase.co', 'sb_publishable_k6LgEuwPLdCsBMCFC12wfQ_BSOJotuw');
-                        debugLog('info', '✅ نجحت المحاولة الأخيرة لتهيئة العميل');
-                    }
-                } catch(e) { debugLog('error', 'فشلت المحاولة الأخيرة أيضاً: ' + e.message); }
-                if (!_sb) {
-                    showToast('⚠️ تعذّر الاتصال بالخادم — تحقق من الإنترنت وحاول مجدداً بعد ثوانٍ');
-                    debugLog('error', '🔥 توقفت العملية — العميل غير جاهز إطلاقاً (ملف sb-minimal-client.js لم يُحمَّل)');
-                    return;
-                }
-            }
-
-            debugLog('info', `📡 جاري الاتصال بـ Supabase للبحث عن: ${email}`);
-            const { data: rowData, error: rowError } = await _sb.from('restaurants').select('*').ilike('email', email).maybeSingle();
-            if (rowError) { debugLog('error', '❌ خطأ من Supabase أثناء البحث: ' + rowError.message); showToast('⚠️ تعذّر الاتصال بالخادم، تحقق من الإنترنت'); return; }
-            debugLog('info', rowData ? '✅ وُجد مطعم مطابق للإيميل' : '⚠️ لا يوجد مطعم بهذا الإيميل');
-
-            const data = rowData && (String(rowData.access_code).trim() === String(code).trim()) ? rowData : null;
-            if (data) {
-                debugLog('info', '✅ الكود صحيح — تسجيل الدخول ناجح، جاري بدء التطبيق');
+            // ===== نهاية توليد اسم المستخدم =====
+            // [SEC-PATCH-27] إضافة timestamp للجلسة للتحقق من الصلاحية (24 ساعة)
+            const _sessionData39 = Object.assign({}, data, { _ts: Date.now() });
+            localStorage.setItem('sh_store_session', JSON.stringify(_sessionData39));
+            startApp();
+        } else {
+            _loginAttempts++;
+            sessionStorage.setItem('_res_attempts', _loginAttempts);
+            if (_loginAttempts >= 5) {
+                _loginLockUntil = Date.now() + 60000;
+                sessionStorage.setItem('_res_lock_until', _loginLockUntil);
                 _loginAttempts = 0;
-                try { sessionStorage.removeItem('_res_attempts'); sessionStorage.removeItem('_res_lock_until'); } catch(e) { debugLog('error', 'تعذّر مسح sessionStorage (غير حرج): ' + e.message); }
-                currentRes = data;
-                if (!currentRes.auto_username) {
-                    const autoUser = generateAutoUsername('RES');
-                    try { await _sb.from('restaurants').update({ auto_username: autoUser }).eq('id', currentRes.id); } catch(e) {}
-                    currentRes.auto_username = autoUser;
-                }
-                const _sessionData39 = Object.assign({}, data, { _ts: Date.now() });
-                try {
-                    localStorage.setItem('sh_store_session', JSON.stringify(_sessionData39));
-                    debugLog('info', '✅ تم حفظ الجلسة في localStorage بنجاح');
-                } catch(e) {
-                    // [FIX-WEBVIEW-LOGIN] إن تعذّر حفظ الجلسة (localStorage مقيَّد)، نستمر بالجلسة في
-                    // الذاكرة فقط للسماح بالعمل بالجلسة الحالية حتى لو لن تُحفظ بعد إغلاق التطبيق
-                    debugLog('error', '⚠️ تعذّر حفظ الجلسة في localStorage: ' + e.message + ' — سيعمل التطبيق بالجلسة الحالية فقط دون حفظها');
-                }
-                startApp();
-                debugLog('info', '🚀 تم استدعاء startApp() — يجب أن تظهر الصفحة الرئيسية الآن');
-            } else {
-                debugLog('info', '❌ بيانات الدخول غير صحيحة');
-                _loginAttempts++;
-                try {
-                    sessionStorage.setItem('_res_attempts', _loginAttempts);
-                    if (_loginAttempts >= 5) {
-                        _loginLockUntil = Date.now() + 60000;
-                        sessionStorage.setItem('_res_lock_until', _loginLockUntil);
-                        _loginAttempts = 0;
-                        sessionStorage.setItem('_res_attempts', '0');
-                    }
-                } catch(e) { debugLog('error', 'تعذّر تحديث عداد المحاولات (غير حرج): ' + e.message); }
-                showToast('بيانات الدخول غير صحيحة ❌');
+                sessionStorage.setItem('_res_attempts', '0');
             }
-        } catch(_fatalErr) {
-            // [FIX-WEBVIEW-LOGIN] الحماية الأهم: أي استثناء غير متوقع في أي مكان من هذه الدالة كان
-            // سابقاً يوقف العملية بصمت تماماً بدون أي أثر — الآن يظهر بوضوح دائماً
-            debugLog('error', '🔥 خطأ غير متوقع توقفت بسببه عملية تسجيل الدخول: ' + (_fatalErr.message || _fatalErr));
-            showToast('⚠️ حدث خطأ غير متوقع، افتح سجل التشخيص بالأسفل لمعرفة السبب');
+            showToast('بيانات الدخول غير صحيحة ❌');
         }
     }
 
@@ -780,8 +562,6 @@ window.createMinimalSupabaseClient = createMinimalSupabaseClient;
         loadOrders(true);
         loadHistory();
         renderMenuSections();
-        // [POS-PRINT] تهيئة نظام الطباعة: جلب ربط الجهاز ثم محاولة الاتصال بوكيل الطباعة المحلي
-        _loadPosDevicePairing();
         // تحديث دوري كل 5 ثواني
         // [FIX-INTERVAL-39] منع تكديس المؤقتات عند إعادة استدعاء startApp
         if (window._mainRefreshInterval39) clearInterval(window._mainRefreshInterval39);
@@ -868,318 +648,6 @@ window.createMinimalSupabaseClient = createMinimalSupabaseClient;
     }
 
     // ===== جلب الطلبات =====
-    // ===========================================================================
-    // [POS-PRINT] نظام طباعة لأجهزة نقاط البيع — يعتمد على نافذة طباعة النظام القياسية
-    // ===========================================================================
-    // ملاحظة صادقة مهمة: الطابعة في هذا الجهاز مدمجة داخلياً (POS متخصص) — الوصول لها من جافاسكريبت
-    // بحت غير ممكن بدون SDK أصلي من الشركة المصنّعة (يتطلب تطبيق أندرويد مخصَّص). الطريقة العملية
-    // الوحيدة المتاحة هنا: استخدام window.print() القياسية، على أن يربط غلاف التطبيق (مثل Median.co
-    // أو أداة مشابهة تدعم الطباعة) هذه النافذة بطابعة النظام المسجَّلة فعلياً تلقائياً.
-
-    const POS_DEVICE_ID = (() => {
-        let id = localStorage.getItem('sh_pos_device_id');
-        if (!id) { id = 'pos_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10); localStorage.setItem('sh_pos_device_id', id); }
-        return id;
-    })();
-
-    let _posDeviceInfo = null;  // الصف من جدول pos_devices الخاص بهذا الجهاز (إن وُجد)
-    const _posLogs = []; // سجل محلي ظاهر في واجهة التطبيق لتسهيل تتبع المشاكل فوراً
-
-    function posLog(type, message) {
-        const entry = { type, message, time: new Date().toLocaleTimeString('ar-SY') };
-        _posLogs.unshift(entry);
-        if (_posLogs.length > 50) _posLogs.pop();
-        renderPosLogPanel();
-        try { _sb.from('print_logs').insert([{ device_id: POS_DEVICE_ID, status: type, detail: message }]).then(()=>{}).catch(()=>{}); } catch(e) {}
-        console.log(`[POS-PRINT][${type}]`, message);
-    }
-
-    function renderPosLogPanel() {
-        const el = document.getElementById('pos-log-list');
-        if (!el) return;
-        const colors = { success: '#2ecc71', failed: '#e74c3c', info: '#3498db', queued: '#f39c12' };
-        el.innerHTML = _posLogs.map(l => `<div style="font-size:10.5px; padding:4px 0; border-bottom:1px solid rgba(255,255,255,0.06); color:${colors[l.type]||'#ccc'};">[${l.time}] ${escHtml(l.message)}</div>`).join('') || '<div style="font-size:11px; color:#888;">لا توجد سجلات بعد</div>';
-    }
-
-    async function _loadPosDevicePairing() {
-        try {
-            const { data, error } = await _sb.from('pos_devices').select('*').eq('device_id', POS_DEVICE_ID).maybeSingle();
-            if (error) { posLog('failed', 'تعذّر جلب إعدادات ربط الجهاز: ' + error.message); return; }
-            _posDeviceInfo = data;
-            if (data) {
-                posLog('info', `إعدادات هذا الجهاز: مطعم "${data.restaurant_name || '—'}" — عرض الورق: ${data.paper_width_mm || 58}مم`);
-                const sel = document.getElementById('pos-paper-width-select');
-                if (sel) sel.value = String(data.paper_width_mm || 58);
-                await _sb.from('pos_devices').update({ last_seen: new Date().toISOString() }).eq('device_id', POS_DEVICE_ID);
-            } else {
-                posLog('info', `جهاز جديد — معرّف الجهاز: ${POS_DEVICE_ID} (سيُحفَظ تلقائياً عند أول تغيير لعرض الورق)`);
-            }
-        } catch(e) { posLog('failed', 'استثناء أثناء جلب إعدادات الربط: ' + e.message); }
-        _refreshLocalPrintStatus();
-    }
-
-    // [LOCAL-PRINT-SERVICE] فحص حالة خدمة الطباعة المحلية وتحديث الشارة الظاهرة في الإعدادات
-    async function _refreshLocalPrintStatus() {
-        const badge = document.getElementById('local-print-status-badge');
-        const status = await _checkLocalPrintServiceStatus();
-        if (!badge) return;
-        if (status.running && status.printerConnected) {
-            badge.innerHTML = '<i class="fas fa-check-circle"></i> خدمة الطباعة متصلة بالطابعة ✅';
-            badge.style.color = '#2ecc71'; badge.style.borderColor = '#2ecc71';
-        } else if (status.running) {
-            badge.innerHTML = '<i class="fas fa-exclamation-triangle"></i> الخدمة تعمل لكن الطابعة غير متصلة';
-            badge.style.color = '#f39c12'; badge.style.borderColor = '#f39c12';
-        } else {
-            badge.innerHTML = '<i class="fas fa-times-circle"></i> جسر الطباعة (AndroidPrinter) غير متاح على هذا الجهاز';
-            badge.style.color = '#e74c3c'; badge.style.borderColor = '#e74c3c';
-        }
-    }
-
-    async function savePosDevicePairing() {
-        if (!currentRes) { showToast('سجّل دخولك أولاً'); return; }
-        const paperWidth = parseInt(document.getElementById('pos-paper-width-select') ? document.getElementById('pos-paper-width-select').value : 0) || 58;
-        try {
-            const { error } = await _sb.from('pos_devices').upsert([{
-                device_id: POS_DEVICE_ID, restaurant_id: currentRes.id, restaurant_name: currentRes.name,
-                paper_width_mm: paperWidth, last_seen: new Date().toISOString()
-            }], { onConflict: 'device_id' });
-            if (error) throw error;
-            _posDeviceInfo = _posDeviceInfo || {};
-            _posDeviceInfo.paper_width_mm = paperWidth;
-            posLog('success', `✅ تم الحفظ — عرض الورق: ${paperWidth}مم`);
-            showToast('✅ تم الحفظ بنجاح');
-        } catch(e) { showToast('⚠️ خطأ: ' + e.message); posLog('failed', 'فشل حفظ ربط الجهاز: ' + e.message); }
-    }
-
-    // [FIX-SILENT-PRINT-QUICKPRINTER] بناء نص الإيصال بصيغة أوسمة Quick Printer (موثَّقة رسمياً) —
-    // تُرسَل لتطبيق Quick Printer المثبَّت على الجهاز عبر intent:// ليطبعها مباشرة على الطابعة
-    // المُهيَّأة مسبقاً داخل التطبيق، بدون أي نافذة طباعة من نظام أندرويد على الإطلاق (عند تفعيل خيار
-    // avoid_dialog في النسخة المدفوعة من Quick Printer)
-    function _buildReceiptQuickPrinterText(o) {
-        let itemsText = '';
-        try {
-            const arr = JSON.parse(o.items || '[]');
-            arr.forEach(i => {
-                itemsText += '<LEFT>' + (i.n || '') + '<RIGHT>' + (parseFloat(i.p) || 0).toLocaleString() + '<BR>';
-            });
-        } catch(e) {}
-        const resName = (currentRes && currentRes.name) || 'شاهين إكسبريس';
-        let text = '<CENTER><BIG><BOLD>' + resName + '<BR><NORMAL>';
-        text += '<CENTER>إيصال طلب 🦅<BR>';
-        text += '<LINE><BR>';
-        text += '<LEFT>رقم الطلب: #' + String(o.id).slice(-6) + '<BR>';
-        text += '<LEFT>العميل: ' + (o.customer_name || 'عميل شاهين') + '<BR>';
-        text += '<LEFT>' + new Date(o.created_at).toLocaleString('ar-SY') + '<BR>';
-        text += '<LINE><BR>';
-        text += itemsText;
-        text += '<LINE><BR>';
-        text += '<BOLD><LEFT>الإجمالي<RIGHT>' + Number(o.total || 0).toLocaleString() + ' ل.س<BR><NORMAL>';
-        text += '<CENTER>شكراً لاختياركم شاهين إكسبريس 🦅<BR>';
-        text += '<CUT>';
-        return text;
-    }
-
-    function _getPrintQueue() {
-        try { return JSON.parse(localStorage.getItem('sh_print_queue') || '[]'); } catch(e) { return []; }
-    }
-    function _setPrintQueue(q) { localStorage.setItem('sh_print_queue', JSON.stringify(q)); }
-    function _getPrintedSet() {
-        try { return new Set(JSON.parse(localStorage.getItem('sh_printed_order_ids') || '[]')); } catch(e) { return new Set(); }
-    }
-    function _markPrinted(orderId) {
-        const set = _getPrintedSet(); set.add(String(orderId));
-        const arr = Array.from(set).slice(-500);
-        localStorage.setItem('sh_printed_order_ids', JSON.stringify(arr));
-    }
-
-    async function printOrderReceipt(o) {
-        // [FIX-PRINT-STATUS-DB] فحص حالة الطباعة من قاعدة البيانات أولاً، لا من الجهاز فقط — هذا يضمن
-        // عدم التكرار حتى لو أُعيد تثبيت التطبيق أو مُسحت بيانات المتصفح بالكامل على هذا الجهاز
-        try {
-            const { data: freshOrder } = await _sb.from('sh_public_orders').select('print_status').eq('id', o.id).maybeSingle();
-            if (freshOrder && freshOrder.print_status === 'printed') {
-                posLog('info', `تم تجاهل طباعة مكررة لطلب #${String(o.id).slice(-6)} (مُسجَّل "مطبوع" في قاعدة البيانات)`);
-                _markPrinted(o.id);
-                return;
-            }
-        } catch(e) { posLog('failed', 'خطأ أثناء فحص حالة الطباعة من القاعدة: ' + e.message); }
-
-        if (_getPrintedSet().has(String(o.id))) { posLog('info', `تم تجاهل طباعة مكررة لطلب #${String(o.id).slice(-6)} (طُبع مسبقاً على هذا الجهاز)`); return; }
-
-        // [FIX-SUNMI-AIDL-BRIDGE] الطريقة المعتمَدة الآن: جسر JavaScript Interface مباشر إلى SUNMI
-        // Printer SDK (AIDL) — مؤكَّد متوافق فعلياً مع هذا الجهاز (Sunmi V2 حقيقي). صفر نوافذ طباعة.
-        const result = await _sendToAndroidPrinter(o);
-        if (result.ok) {
-            _markPrinted(o.id);
-            _setOrderPrintStatus(o.id, 'printed', null);
-            posLog('success', `🖨️ تم إرسال طلب الطباعة #${String(o.id).slice(-6)} لجسر SUNMI Printer SDK`);
-        } else {
-            _setOrderPrintStatus(o.id, 'failed', result.reason);
-            _queuePrint(o);
-            _showPrintFailureBanner(o, result.reason);
-            posLog('failed', `❌ فشلت طباعة الطلب #${String(o.id).slice(-6)}: ${result.reason}`);
-        }
-    }
-
-    // [FIX-SUNMI-AIDL-BRIDGE] بناء بيانات الإيصال بصيغة JSON المنظَّمة التي يفهمها PrinterBridge.java
-    // (شعار + أسطر بمحاذاة وحجم خط مخصَّص لكل سطر + رمز QR اختياري لاحقاً لنظام نقاط الشاهين)
-    function _buildReceiptPayload(o) {
-        let itemLines = [];
-        let itemsTotal = 0;
-        try {
-            const arr = JSON.parse(o.items || '[]');
-            arr.forEach(i => {
-                itemsTotal += parseFloat(i.p) || 0;
-                itemLines.push({ text: (i.n || '') + '  -  ' + (parseFloat(i.p) || 0).toLocaleString() + ' ل.س', align: 0, size: 24 });
-            });
-        } catch(e) {}
-
-        const resName = (currentRes && currentRes.name) || 'شاهين إكسبريس';
-        const lines = [
-            { text: resName, align: 1, bold: true, size: 36 },
-            { text: 'إيصال طلب 🦅', align: 1, size: 22 },
-            { text: '--------------------------------', align: 1, size: 20 },
-            { text: 'رقم الطلب: #' + String(o.id).slice(-6), align: 0, size: 24 },
-            { text: 'العميل: ' + (o.customer_name || 'عميل شاهين'), align: 0, size: 24 },
-            { text: new Date(o.created_at).toLocaleString('ar-SY'), align: 0, size: 20 },
-            { text: '--------------------------------', align: 1, size: 20 },
-            ...itemLines,
-            { text: '--------------------------------', align: 1, size: 20 },
-            { text: 'الإجمالي: ' + Number(o.total || itemsTotal).toLocaleString() + ' ل.س', align: 0, bold: true, size: 28 },
-            { text: 'شكراً لاختياركم شاهين إكسبريس 🦅', align: 1, size: 20 }
-        ];
-
-        const payload = { lines: lines };
-        if (currentRes && currentRes.logo_base64) payload.logoBase64 = currentRes.logo_base64;
-        return payload;
-    }
-
-    // [FIX-SUNMI-AIDL-BRIDGE] الاتصال بجسر JavaScript Interface (window.AndroidPrinter) — يكون متاحاً
-    // فقط عند بناء التطبيق كمشروع Android Studio حقيقي مع PrinterBridge.java المدمَج (لا يعمل من متصفح عادي)
-    function _sendToAndroidPrinter(o) {
-        return new Promise((resolve) => {
-            if (typeof window.AndroidPrinter === 'undefined' || !window.AndroidPrinter.printReceipt) {
-                resolve({ ok: false, reason: 'جسر الطباعة (AndroidPrinter) غير متاح — تأكد أن التطبيق مبنيّ بمشروع Android Studio يحتوي PrinterBridge.java، لا متصفح عادي' });
-                return;
-            }
-            // نتيجة الطباعة الحقيقية (نجاح/فشل) تصل لاحقاً بشكل غير متزامن عبر window.onAndroidPrinterEvent
-            // ونُسجِّلها هناك في السجل — هنا نعتبر إرسال الأمر نفسه ناجحاً إن لم يُرمَ أي استثناء فوري
-            try {
-                window.AndroidPrinter.printReceipt(JSON.stringify(_buildReceiptPayload(o)));
-                resolve({ ok: true });
-            } catch(e) {
-                resolve({ ok: false, reason: 'فشل استدعاء جسر الطباعة: ' + e.message });
-            }
-        });
-    }
-
-    // استقبال نتيجة الطباعة الحقيقية (نجاح/فشل فعلي من الطابعة نفسها، لا تقديري) من الكود الأصلي
-    window.onAndroidPrinterEvent = function(status, message) {
-        if (status === 'print_success') posLog('success', '✅ ' + message);
-        else if (status === 'print_failed') posLog('failed', '❌ ' + message);
-        else posLog('info', message);
-    };
-
-    // [FIX-SUNMI-AIDL-BRIDGE] فحص حالة جسر الطباعة (متاح أم لا، ومتصل بالطابعة أم لا) — يُستخدَم لعرض شارة الحالة
-    function _checkLocalPrintServiceStatus() {
-        if (typeof window.AndroidPrinter === 'undefined') return { running: false, printerConnected: false };
-        try { return { running: true, printerConnected: window.AndroidPrinter.isPrinterConnected() === true }; }
-        catch(e) { return { running: true, printerConnected: false }; }
-    }
-
-    // [FIX-PRINT-STATUS-DB] تحديث حالة الطباعة في قاعدة البيانات — مرئية لأي جهاز/متصفح آخر يفتح نفس الطلب
-    async function _setOrderPrintStatus(orderId, status, failReason) {
-        try {
-            const payload = { print_status: status, print_fail_reason: failReason || null };
-            if (status === 'printed') payload.printed_at = new Date().toISOString();
-            await _sb.from('sh_public_orders').update(payload).eq('id', orderId);
-        } catch(e) { posLog('failed', 'تعذّر تحديث حالة الطباعة في القاعدة: ' + e.message); }
-    }
-
-    // [FIX-PRINT-FAILURE-UI] شريط تنبيه واضح وظاهر عند فشل الطباعة، مع زر إعادة المحاولة الفورية
-    function _showPrintFailureBanner(o, reason) {
-        let banner = document.getElementById('print-failure-banner');
-        if (!banner) {
-            banner = document.createElement('div');
-            banner.id = 'print-failure-banner';
-            banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:999999;background:#7a0000;color:#fff;padding:12px 16px;font-size:13px;text-align:center;box-shadow:0 2px 10px rgba(0,0,0,0.5);';
-            document.body.insertBefore(banner, document.body.firstChild);
-        }
-        banner.innerHTML = '⚠️ فشلت طباعة الطلب #' + String(o.id).slice(-6) + ' — ' + reason +
-            ' <button onclick="printOrderReceiptById(\'' + o.id + '\'); document.getElementById(\'print-failure-banner\').remove();" style="background:#fff;color:#7a0000;border:none;padding:6px 14px;border-radius:8px;font-weight:bold;margin-right:8px;cursor:pointer;">إعادة الطباعة</button>' +
-            ' <button onclick="document.getElementById(\'print-failure-banner\').remove();" style="background:transparent;border:1px solid #fff;color:#fff;padding:6px 10px;border-radius:8px;cursor:pointer;">إغلاق</button>';
-    }
-
-    function _queuePrint(o) {
-        const q = _getPrintQueue();
-        if (q.some(item => String(item.id) === String(o.id))) return;
-        q.push(o);
-        _setPrintQueue(q);
-    }
-
-    async function _flushPrintQueue() {
-        const q = _getPrintQueue();
-        if (!q.length) return;
-        posLog('info', `🔄 إعادة محاولة طباعة ${q.length} طلب(ات) من الطابور المحفوظ...`);
-        _setPrintQueue([]); // نُفرِّغ الطابور أولاً، وكل طلب يُعاد إدراجه في الطابور تلقائياً من جديد إن فشل
-        for (const o of q) {
-            if (_getPrintedSet().has(String(o.id))) continue;
-            // [FIX-PRINT-CONSISTENCY] إعادة استخدام نفس دالة الطباعة الأساسية بالضبط — تضمن نفس فحص
-            // حالة قاعدة البيانات، نفس أمر القص، ونفس شريط التنبيه عند الفشل، بدون أي تكرار للمنطق
-            await printOrderReceipt(o);
-        }
-    }
-
-    // [FIX-NATIVE-PRINT-BRIDGE] اكتُشِف أن "Website 2 APK Builder Pro" — الأداة المُستخدَمة فعلياً —
-    // توفّر جسراً أصلياً حقيقياً موثَّقاً رسمياً: Website2APK.printPage() — يستدعي نظام طباعة أندرويد
-    // الأصلي مباشرة (بدل window.print() العادية التي تتجاهلها أغلب أغلفة WebView العامة بصمت).
-    // بما أن هذا الجسر يطبع الصفحة الرئيسية نفسها (لا الـiframe المخفي كما كان سابقاً)، أصبح محتوى
-    // الإيصال يُحقَن في عنصر مخفي ضمن الصفحة الرئيسية، مع إخفاء كل شيء آخر أثناء الطباعة فقط عبر CSS
-    async function printOrderReceiptById(orderId) {
-        const o = allOrders.find(x => String(x.id) === String(orderId)) || historyOrders.find(x => String(x.id) === String(orderId));
-        if (!o) { showToast('⚠️ تعذّر العثور على بيانات الطلب للطباعة'); return; }
-        const result = await _sendToAndroidPrinter(o);
-        if (result.ok) {
-            posLog('success', `🖨️ طباعة يدوية ناجحة للطلب #${String(orderId).slice(-6)} عبر جسر SUNMI Printer SDK`);
-            _setOrderPrintStatus(orderId, 'printed', null);
-            showToast('✅ تمت إعادة الطباعة بنجاح');
-        } else {
-            posLog('failed', `❌ فشلت الطباعة اليدوية: ${result.reason}`);
-            showToast('⚠️ فشلت الطباعة: ' + result.reason);
-        }
-    }
-
-    // [AUTO-ACCEPT] قبول تلقائي للطلبات الجديدة + طباعة إيصال فوراً، بدون أي تدخل يدوي
-    function _getAutoAcceptedSet() {
-        try { return new Set(JSON.parse(localStorage.getItem('sh_auto_accepted_ids') || '[]')); }
-        catch(e) { return new Set(); }
-    }
-    function _saveAutoAcceptedSet(set) {
-        try { localStorage.setItem('sh_auto_accepted_ids', JSON.stringify(Array.from(set))); } catch(e) {}
-    }
-    async function _autoAcceptNewOrders(newSearchingOrders) {
-        if (!newSearchingOrders.length) return;
-        const seen = _getAutoAcceptedSet();
-        for (const o of newSearchingOrders) {
-            if (seen.has(String(o.id))) continue;
-            seen.add(String(o.id));
-            try {
-                await _sb.from('orders').update({ status: 'accepted', restaurant_note: '📥 تم استلام طلبك — بدأنا التجهيز ✅' }).eq('id', o.id);
-                await _sb.from('sh_public_orders').update({ status: 'accepted', restaurant_note: '📥 تم استلام طلبك — بدأنا التجهيز ✅' }).eq('id', o.id);
-                const { data: ord } = await _sb.from('sh_public_orders').select('customer_id, driver_id').eq('id', o.id).single();
-                if ((ord && ord.customer_id)) {
-                    await _sb.from('notifications').insert([{ user_id: ord.customer_id, message: '🍽️ تحديث طلبك من ' + ((currentRes && currentRes.name) || 'المطعم') + ': 📥 تم استلام طلبك — بدأنا التجهيز ✅', type: 'order_status', created_at: new Date().toISOString() }]).catch(() => {});
-                }
-                showToast('✅ تم قبول الطلب تلقائياً وطباعة الإيصال 🦅');
-                printOrderReceipt(o);
-            } catch(e) {
-                posLog('failed', 'خطأ أثناء القبول التلقائي للطلب: ' + o.id + ' — ' + e.message);
-                seen.delete(String(o.id));
-            }
-        }
-        _saveAutoAcceptedSet(seen);
-    }
-
     async function loadOrders(isFirst = false) {
         if (!currentRes) return;
         // ===== التحقق من صلاحية تجهيز الطلبات =====
@@ -1210,41 +678,19 @@ window.createMinimalSupabaseClient = createMinimalSupabaseClient;
 
         const _filtered = (orders || []).filter(o => {
             if (_archivedOrderIds.has(String(o.id))) return false;
-            // [FIX-ORDERS-NOT-ARRIVING] هذا الشرط كان يُخفي كل الطلبات العادية من قائمة المطعم بالكامل
-            // طالما حالتها "searching" — لأن كل طلب منيو عادي يُنشأ بـ is_consultation=false دائماً!
-            // هذا يعني أن الطلبات الجديدة لم تكن تصل إطلاقاً لهذه الصفحة قبل هذا الإصلاح.
-            // if (o.status === 'searching' && o.is_consultation === false) { _archivedOrderIds.add(String(o.id)); return false; }
+            if (o.status === 'searching' && o.is_consultation === false) { _archivedOrderIds.add(String(o.id)); return false; }
             // ===== الفصل الكامل بين النظامين =====
             // طلب التواصل المباشر (direct_chat) → خانة التواصل فقط، لا يظهر في خانة الطلبات
             // طلب المنيو (menu_order) → خانة الطلبات فقط، لا يذهب للمحادثات
             // ===== نهاية الفصل =====
-            // ===== [FIX-ORDER-ROUTING] سياسة جديدة وموحَّدة لكل المطاعم: الطلب لا يصل لشاشة المطعم
-            // إطلاقاً إلا بعد أن يقبله مندوب فعلياً (الحالة تصبح غير "بحث")، أو بعد أن ترسله الإدارة
-            // يدوياً عبر علم admin_sent_to_restaurant — هذا يحمي المطعم من أي طلب لم يُؤكَّد توصيله بعد
-            if (o.status === 'searching' || o.status === 'awaiting_driver' || o.status === 'pending_store') {
-                if (o.admin_sent_to_restaurant !== true) return false;
+            // ===== إذا المطعم غير شريك (allow_orders=false) =====
+            // الطلب لا يظهر للمطعم إلا بعد أن يستلمه المندوب (حالة accepted فما فوق)
+            if (!currentRes.allow_orders) {
+                if (o.status === 'searching' || o.status === 'awaiting_driver' || o.status === 'pending_store') return false;
             }
             return true;
         });
         allOrders = _filtered;
-
-        // [AUTO-ACCEPT] قبول فوري تلقائي لكل طلب جديد بحالة "searching" (للمطاعم الشريكة التي تستقبل
-        // الطلب قبل المندوب) — بدون أي تدخل يدوي
-        const _newSearchingOrders = _filtered.filter(o => o.status === 'searching');
-        if (_newSearchingOrders.length > 0) {
-            _autoAcceptNewOrders(_newSearchingOrders).then(() => loadOrders(false));
-        }
-
-        // [FIX-AUTO-PRINT-ANY-STATUS] طباعة فورية لأي طلب يظهر لأول مرة في هذه القائمة، بصرف النظر عن
-        // حالته — يضمن الطباعة التلقائية حتى للمطاعم غير الشريكة التي لا ترى الطلب إلا بعد قبول
-        // المندوب له مباشرة (أي لا تمر بحالة "searching" إطلاقاً من منظور هذا المطعم)
-        const _everSeen = (() => { try { return new Set(JSON.parse(localStorage.getItem('sh_ever_seen_order_ids') || '[]')); } catch(e) { return new Set(); } })();
-        const _freshOrders = _filtered.filter(o => !_everSeen.has(String(o.id)) && o.status !== 'consulting' && o.status !== 'pending_store');
-        if (_freshOrders.length > 0) {
-            _freshOrders.forEach(o => { _everSeen.add(String(o.id)); printOrderReceipt(o); });
-            const _trimmed = Array.from(_everSeen).slice(-500);
-            localStorage.setItem('sh_ever_seen_order_ids', JSON.stringify(_trimmed));
-        }
 
         const newCount = allOrders.length;
         // ===== حساب عدد طلبات التجهيز وعدد طلبات التواصل بشكل منفصل =====
@@ -1275,6 +721,18 @@ window.createMinimalSupabaseClient = createMinimalSupabaseClient;
                 }
             }
         }
+        // ===== طباعة صامتة فورية للطلبات الجديدة عبر SUNMI Bridge =====
+        // نطبع فقط الطلبات التي لم نرها سابقاً (وليس فقط عند زيادة العدّاد) لضمان طباعة كل طلب جديد مرة واحدة
+        const _prevSeenIds = window._seenPrepOrderIds || new Set();
+        if (!isFirst) {
+            newPrepOrders.forEach(o => {
+                if (!_prevSeenIds.has(String(o.id))) {
+                    printReceipt(buildReceiptData(o));
+                }
+            });
+        }
+        window._seenPrepOrderIds = new Set(newPrepOrders.map(o => String(o.id)));
+        // ===== نهاية الطباعة الصامتة =====
         window._lastPrepOrderCount = newPrepOrders.length;
         window._lastChatOrderCount = newChatOrders.length;
         // ===== نهاية الفصل بين صوتَي الطلبات والتواصل =====
@@ -1319,7 +777,7 @@ window.createMinimalSupabaseClient = createMinimalSupabaseClient;
 
     // ===== عرض الطلبات =====
     function filterAndRenderOrders() {
-        const term = ((document.getElementById('orders-search') ? document.getElementById('orders-search').value : '')).toLowerCase();
+        const term = (document.getElementById('orders-search')?.value || '').toLowerCase();
         // ===== الفصل الكامل: تبويب الطلبات يعرض طلبات المنيو فقط =====
         // is_consultation=true = تواصل مباشر → ممنوع ظهوره هنا نهائياً
         // is_consultation=false/null = طلب منيو → يظهر هنا فقط
@@ -1374,8 +832,11 @@ window.createMinimalSupabaseClient = createMinimalSupabaseClient;
                 <button class="sbtn sbtn-reject" onclick="rejectOrder('${o.id}')"><i class="fas fa-times"></i> رفض الطلب</button>`;
             } else {
                 btns = `
-                <button class="sbtn sbtn-ready  ${isU(o.id,'m3')}"  onclick="updateStatus('${o.id}','ready','✅ طلبك جاهز وبانتظار المندوب 🦅','m3')">✅ الطلب جاهز</button>
-                <button class="sbtn" style="background:rgba(212,175,55,0.12); color:var(--gold); border:1px solid var(--gold);" onclick="printOrderReceiptById('${o.id}')"><i class="fas fa-print"></i> إعادة طباعة الإيصال</button>`;
+                <button class="sbtn sbtn-accept ${isU(o.id,'m1')}"  onclick="updateStatus('${o.id}','accepted','📥 تم استلام طلبك — بدأنا التجهيز ✅','m1')">📥 تم استلام الطلب</button>
+                <button class="sbtn sbtn-prep   ${isU(o.id,'m2')}"  onclick="updateStatus('${o.id}','preparing','🍳 طلبك قيد التجهيز الآن','m2')">🍳 قيد التجهيز</button>
+                <button class="sbtn sbtn-ready  ${isU(o.id,'m3')}"  onclick="updateStatus('${o.id}','ready','✅ طلبك جاهز وبانتظار المندوب 🦅','m3')">✅ تم التجهيز — جاهز</button>
+                <button class="sbtn sbtn-sent   ${isU(o.id,'m4')}"  onclick="updateStatus('${o.id}','picked','🦅 تم تسليم طلبك للمندوب','m4')">🦅 تسليم للمندوب</button>
+                ${_printFailedIds.has(String(o.id)) ? `<button class="sbtn sbtn-reject" onclick="reprintOrder('${o.id}')"><i class="fas fa-print"></i> إعادة طباعة الإيصال</button>` : ''}`;
             }
             return `
             <div class="order-card ${isChat ? 'chat-order' : (o.status==='accepted'||o.status==='preparing'||o.status==='ready' ? 'in-progress' : 'new-order')}">
@@ -1401,14 +862,14 @@ window.createMinimalSupabaseClient = createMinimalSupabaseClient;
         await _sb.from('sh_public_orders').update({ status, restaurant_note: msg }).eq('id', id);
         // إشعار للعميل والمندوب
         const { data: ord } = await _sb.from('sh_public_orders').select('customer_id, driver_id').eq('id', id).single();
-        if ((ord && ord.customer_id)) {
+        if (ord?.customer_id) {
             await _sb.from('notifications').insert([{
                 user_id: ord.customer_id,
-                message: '🍽️ تحديث طلبك من ' + ((currentRes && currentRes.name) || 'المطعم') + ': ' + msg,
+                message: '🍽️ تحديث طلبك من ' + (currentRes?.name || 'المطعم') + ': ' + msg,
                 type: 'order_status', created_at: new Date().toISOString()
             }]).catch(() => {});
         }
-        if ((ord && ord.driver_id)) {
+        if (ord?.driver_id) {
             await _sb.from('notifications').insert([{
                 user_id: ord.driver_id,
                 message: '🍽️ تحديث طلب المطعم: ' + msg,
@@ -1568,7 +1029,7 @@ window.createMinimalSupabaseClient = createMinimalSupabaseClient;
         const total   = calcInvoiceTotal();
         if (!details || total === 0) { showToast('يرجى كتابة الأصناف والأسعار ❌'); return; }
         const targetId = activeOrderId;
-        const invoice  = '🧾 فاتورة ' + ((currentRes && currentRes.name)||'المطعم') + ':\n──────────\n' + details + '\n──────────\n💰 الإجمالي: ' + total.toLocaleString() + ' ل.س';
+        const invoice  = '🧾 فاتورة ' + (currentRes?.name||'المطعم') + ':\n──────────\n' + details + '\n──────────\n💰 الإجمالي: ' + total.toLocaleString() + ' ل.س';
         const { error } = await _sb.from('sh_public_orders').update({
             order_details: invoice, order_price: total, total: total,
             restaurant_note: 'INVOICE_SENT:' + total, status: 'store_invoice_sent'
@@ -1616,7 +1077,6 @@ window.createMinimalSupabaseClient = createMinimalSupabaseClient;
             <div style="font-size:11px;opacity:0.5;">#${escHtml(String(o.id))} · ${new Date(o.created_at).toLocaleString('ar-SY')}</div>
             ${o.order_details ? `<div class="ai-detail">${escHtml(o.order_details)}</div>` : ''}
             ${(o.total||o.order_price) ? `<div style="font-size:12px;color:var(--gold);margin-top:5px;">💰 ${(Number(o.total||0)||Number(o.order_price||0)).toLocaleString()} ل.س</div>` : ''}
-            <button class="sbtn" style="margin-top:8px; background:rgba(212,175,55,0.12); color:var(--gold); border:1px solid var(--gold); padding:7px;" onclick="printOrderReceiptById('${o.id}')"><i class="fas fa-print"></i> إعادة طباعة الإيصال</button>
         </div>`).join('');
     }
 
@@ -1798,20 +1258,9 @@ window.createMinimalSupabaseClient = createMinimalSupabaseClient;
     }
 
     window.onload = () => {
-        debugLog('info', '📄 window.onload نُفِّذ — الصفحة جاهزة بالكامل');
-        let s = null;
-        try { s = localStorage.getItem('sh_store_session'); } catch(e) { debugLog('error', 'تعذّر قراءة localStorage: ' + e.message); }
-        if (s) { try { currentRes = JSON.parse(s); startApp(); return; } catch(e) { debugLog('error', 'جلسة محفوظة تالفة، تم تجاهلها: ' + e.message); } }
-        // [TEST-AUTO-LOGIN] تسجيل دخول تلقائي بحساب تجريبي لأي شخص يفتح هذا الملف — للتجربة فقط
-        document.getElementById('login-email').value = 'store841@shahen-partner.com';
-        document.getElementById('login-code').value = 'SH-4F7F8PLY';
-        checkAuth();
+        const s = localStorage.getItem('sh_store_session');
+        if (s) { currentRes = JSON.parse(s); startApp(); }
     };
-    // [POS-PRINT] إعادة محاولة الاتصال بقاعدة البيانات وتفريغ طابور الطباعة فور عودة الإنترنت
-    window.addEventListener('online', () => {
-        posLog('info', '🌐 عاد الاتصال بالإنترنت — إعادة محاولة مزامنة الطلبات والطباعة المعلَّقة');
-        if (currentRes) { loadOrders(false); _flushPrintQueue(); }
-    });
 </script>
 </body>
 </html>
