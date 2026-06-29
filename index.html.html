@@ -504,28 +504,22 @@ window.createMinimalSupabaseClient = createMinimalSupabaseClient;
             </label>
         </div>
 
-        <!-- ===== [POS-PRINT] إعدادات الطباعة لهذا الجهاز ===== -->
+        <!-- ===== [LOCAL-PRINT-SERVICE] إعدادات الطباعة لهذا الجهاز ===== -->
         <div style="background:rgba(52,152,219,0.06); border:1px solid #3498db; border-radius:14px; padding:15px; margin-top:14px;">
-            <p style="font-size:13px; color:#3498db; font-weight:bold; margin:0 0 10px;"><i class="fas fa-print"></i> إعدادات الطباعة لهذا الجهاز</p>
+            <p style="font-size:13px; color:#3498db; font-weight:bold; margin:0 0 10px;"><i class="fas fa-print"></i> خدمة الطباعة المحلية</p>
             <p style="font-size:10.5px; opacity:0.75; margin:0 0 10px; line-height:1.7;">
-                الطباعة تستخدم نافذة طباعة النظام القياسية مباشرة — لا حاجة لاختيار طابعة هنا، نظام الجهاز نفسه يتولّى توجيه الطباعة لطابعته المسجَّلة (الداخلية أو المتصلة).
+                الطباعة تعمل عبر خدمة محلية مثبَّتة على هذا الجهاز (المنفذ 9100) — تطبع مباشرة على الطابعة الحرارية المدمجة بدون أي نافذة أو تدخل يدوي.
             </p>
+            <div id="local-print-status-badge" style="display:inline-block; border:1px solid #888; border-radius:20px; padding:6px 14px; font-size:11.5px; font-weight:bold; margin-bottom:12px;">
+                <i class="fas fa-spinner fa-spin"></i> جاري الفحص...
+            </div>
+            <button class="btn-login" style="padding:9px; font-size:11.5px; margin-bottom:10px; background:rgba(255,255,255,0.08); color:#fff;" onclick="_refreshLocalPrintStatus()"><i class="fas fa-sync"></i> إعادة فحص الخدمة الآن</button>
             <div style="margin-bottom:10px;">
                 <label style="font-size:11px; opacity:0.75; display:block; margin-bottom:5px;">عرض ورق الإيصال</label>
                 <select id="pos-paper-width-select" class="fi" style="margin:0;" onchange="savePosDevicePairing()">
                     <option value="58">58 مم (الأشيع لطابعات نقاط البيع)</option>
                     <option value="80">80 مم</option>
                 </select>
-            </div>
-            <!-- ===== [QUICK-PRINTER] تفعيل الطباعة الصامتة عبر Quick Printer ===== -->
-            <div style="background:rgba(46,204,113,0.06); border:1px solid #2ecc71; border-radius:10px; padding:10px; margin-bottom:10px;">
-                <label style="display:flex; justify-content:space-between; align-items:center; cursor:pointer;">
-                    <span style="font-size:11.5px; color:#2ecc71; font-weight:bold;">🖨️ استخدام Quick Printer (طباعة صامتة بدون نوافذ)</span>
-                    <input type="checkbox" id="pos-use-quickprinter" onchange="savePosDevicePairing()">
-                </label>
-                <p style="font-size:9.5px; opacity:0.7; margin:6px 0 0; line-height:1.6;">
-                    فعّله فقط بعد تثبيت تطبيق "Quick Printer" على هذا الجهاز وتهيئة الطابعة بداخله بنجاح. اختبر بالضغط على "إعادة طباعة الإيصال" أولاً للتأكد قبل الاعتماد عليه تلقائياً.
-                </p>
             </div>
             <details style="margin-top:10px;">
                 <summary style="font-size:11px; color:var(--gold); cursor:pointer;">📋 سجل عمليات الطباعة</summary>
@@ -913,37 +907,46 @@ window.createMinimalSupabaseClient = createMinimalSupabaseClient;
             if (error) { posLog('failed', 'تعذّر جلب إعدادات ربط الجهاز: ' + error.message); return; }
             _posDeviceInfo = data;
             if (data) {
-                posLog('info', `إعدادات هذا الجهاز: مطعم "${data.restaurant_name || '—'}" — عرض الورق: ${data.paper_width_mm || 58}مم — Quick Printer: ${data.use_quickprinter ? 'مفعَّل ✅' : 'غير مفعَّل'}`);
+                posLog('info', `إعدادات هذا الجهاز: مطعم "${data.restaurant_name || '—'}" — عرض الورق: ${data.paper_width_mm || 58}مم`);
                 const sel = document.getElementById('pos-paper-width-select');
                 if (sel) sel.value = String(data.paper_width_mm || 58);
-                const qpCheck = document.getElementById('pos-use-quickprinter');
-                if (qpCheck) qpCheck.checked = data.use_quickprinter === true;
                 await _sb.from('pos_devices').update({ last_seen: new Date().toISOString() }).eq('device_id', POS_DEVICE_ID);
             } else {
                 posLog('info', `جهاز جديد — معرّف الجهاز: ${POS_DEVICE_ID} (سيُحفَظ تلقائياً عند أول تغيير لعرض الورق)`);
             }
         } catch(e) { posLog('failed', 'استثناء أثناء جلب إعدادات الربط: ' + e.message); }
+        _refreshLocalPrintStatus();
     }
 
-    // [FIX-NATIVE-PRINT-HONEST] حذفنا بالكامل منطق اكتشاف/الاتصال بـ QZ Tray — وكيل طباعة لسطح المكتب
-    // فقط (Windows/Mac/Linux)، ولا يعمل إطلاقاً على أندرويد بأي شكل. الطباعة الآن تعتمد كلياً على
-    // نافذة طباعة النظام القياسية (window.print) التي يجب أن يربطها غلاف التطبيق بطابعة النظام
-    // المسجَّلة فعلياً (الداخلية أو الخارجية) — لا حاجة لأي اكتشاف برمجي من جهتنا على الإطلاق
+    // [LOCAL-PRINT-SERVICE] فحص حالة خدمة الطباعة المحلية وتحديث الشارة الظاهرة في الإعدادات
+    async function _refreshLocalPrintStatus() {
+        const badge = document.getElementById('local-print-status-badge');
+        const status = await _checkLocalPrintServiceStatus();
+        if (!badge) return;
+        if (status.running && status.printerConnected) {
+            badge.innerHTML = '<i class="fas fa-check-circle"></i> خدمة الطباعة متصلة بالطابعة ✅';
+            badge.style.color = '#2ecc71'; badge.style.borderColor = '#2ecc71';
+        } else if (status.running) {
+            badge.innerHTML = '<i class="fas fa-exclamation-triangle"></i> الخدمة تعمل لكن الطابعة غير متصلة';
+            badge.style.color = '#f39c12'; badge.style.borderColor = '#f39c12';
+        } else {
+            badge.innerHTML = '<i class="fas fa-times-circle"></i> خدمة الطباعة المحلية غير مُشغَّلة على هذا الجهاز';
+            badge.style.color = '#e74c3c'; badge.style.borderColor = '#e74c3c';
+        }
+    }
 
     async function savePosDevicePairing() {
         if (!currentRes) { showToast('سجّل دخولك أولاً'); return; }
         const paperWidth = parseInt(document.getElementById('pos-paper-width-select') ? document.getElementById('pos-paper-width-select').value : 0) || 58;
-        const useQuickPrinter = document.getElementById('pos-use-quickprinter') ? document.getElementById('pos-use-quickprinter').checked : false;
         try {
             const { error } = await _sb.from('pos_devices').upsert([{
                 device_id: POS_DEVICE_ID, restaurant_id: currentRes.id, restaurant_name: currentRes.name,
-                paper_width_mm: paperWidth, use_quickprinter: useQuickPrinter, last_seen: new Date().toISOString()
+                paper_width_mm: paperWidth, last_seen: new Date().toISOString()
             }], { onConflict: 'device_id' });
             if (error) throw error;
             _posDeviceInfo = _posDeviceInfo || {};
             _posDeviceInfo.paper_width_mm = paperWidth;
-            _posDeviceInfo.use_quickprinter = useQuickPrinter;
-            posLog('success', `✅ تم الحفظ — عرض الورق: ${paperWidth}مم — Quick Printer: ${useQuickPrinter ? 'مفعَّل' : 'غير مفعَّل'}`);
+            posLog('success', `✅ تم الحفظ — عرض الورق: ${paperWidth}مم`);
             showToast('✅ تم الحفظ بنجاح');
         } catch(e) { showToast('⚠️ خطأ: ' + e.message); posLog('failed', 'فشل حفظ ربط الجهاز: ' + e.message); }
     }
@@ -976,68 +979,6 @@ window.createMinimalSupabaseClient = createMinimalSupabaseClient;
         return text;
     }
 
-    // [FIX-SILENT-PRINT-QUICKPRINTER] استدعاء Quick Printer مباشرة عبر intent:// الموثَّق رسمياً —
-    // يحاول الطباعة الصامتة (avoid_dialog) أولاً، فإن لم يكن مثبَّتاً سيفشل الانتقال بصمت ولن يحدث شيء
-    // [FIX-SILENT-PRINT-NATIVE-AIDL] جسر طباعة صامتة حقيقي عبر AIDL — يعمل فقط إن كان التطبيق مبنياً
-    // بمشروع Android Studio مخصَّص (وليس Website2APK) يُعرِّف window.AndroidPrinter عبر addJavascriptInterface
-    function _tryNativeAidlSilent(o) {
-        try {
-            if (typeof window.AndroidPrinter === 'undefined' || !window.AndroidPrinter.printReceipt) {
-                return false;
-            }
-            const text = _buildReceiptQuickPrinterText(o).replace(/<[^>]+>/g, '\n'); // تبسيط الأوسمة لنص عادي للطباعة الأصلية
-            window.AndroidPrinter.printReceipt(text);
-            posLog('info', `📡 تم إرسال أمر طباعة صامتة عبر الجسر الأصلي (AIDL) للطلب #${String(o.id).slice(-6)}`);
-            return true;
-        } catch(e) {
-            posLog('failed', 'فشل استدعاء جسر AIDL الأصلي: ' + e.message);
-            return false;
-        }
-    }
-    // استقبال نتيجة الطباعة الحقيقية من الكود الأصلي (نجاح/فشل فعلي، لا تقديري)
-    window.onAndroidPrinterEvent = function(status, message) {
-        if (status === 'print_success') posLog('success', '✅ ' + message);
-        else if (status === 'print_failed') posLog('failed', '❌ ' + message);
-        else posLog('info', message);
-    };
-
-    function _tryQuickPrinterSilent(o) {
-        try {
-            const text = '<PRINTER avoid_dialog avoid_error_button>' + _buildReceiptQuickPrinterText(o);
-            const encoded = encodeURI(text);
-            window.location.href = 'intent://' + encoded + '#Intent;scheme=quickprinter;package=pe.diegoveloper.printerserverapp;end;';
-            posLog('info', `📲 تم إرسال أمر طباعة صامتة عبر Quick Printer للطلب #${String(o.id).slice(-6)}`);
-            return true;
-        } catch(e) {
-            posLog('failed', 'فشل استدعاء Quick Printer: ' + e.message);
-            return false;
-        }
-    }
-
-    function _buildReceiptHtml(o, widthMm) {
-        const pxWidth = widthMm === 58 ? 220 : 300;
-        const fontBase = widthMm === 58 ? '11px' : '13px';
-        let itemsRows = '', itemsTotal = 0;
-        try {
-            const arr = JSON.parse(o.items || '[]');
-            itemsRows = arr.map(i => {
-                itemsTotal += parseFloat(i.p) || 0;
-                return `<tr><td style="padding:3px 0;">${escHtml(i.n)}</td><td style="text-align:left;padding:3px 0;">${(parseFloat(i.p)||0).toLocaleString()}</td></tr>`;
-            }).join('');
-        } catch(e) {}
-        const logoHtml = currentRes && currentRes.logo ? `<img src="${currentRes.logo}" style="width:${widthMm===58?'45px':'60px'};height:${widthMm===58?'45px':'60px'};border-radius:8px;object-fit:cover;margin-bottom:5px;">` : '';
-        return `<div style="font-family:-apple-system,sans-serif; width:${pxWidth}px; color:#000; font-size:${fontBase}; padding:6px;">
-            <div style="text-align:center;">${logoHtml}<h3 style="margin:3px 0;">${escHtml(currentRes ? currentRes.name : 'شاهين إكسبريس')}</h3><p style="font-size:9px; margin:0;">إيصال طلب 🦅</p></div>
-            <hr style="border:none;border-top:1px dashed #000;margin:8px 0;">
-            <p style="font-size:${widthMm===58?'9.5px':'11px'};">رقم الطلب: #${String(o.id).slice(-6)}<br>العميل: ${escHtml(o.customer_name)||'عميل شاهين'}<br>${new Date(o.created_at).toLocaleString('ar-SY')}</p>
-            <hr style="border:none;border-top:1px dashed #000;margin:8px 0;">
-            <table style="width:100%; border-collapse:collapse;">${itemsRows}</table>
-            <hr style="border:none;border-top:1px dashed #000;margin:8px 0;">
-            <table style="width:100%;"><tr style="font-weight:bold; font-size:${widthMm===58?'13px':'15px'};"><td>الإجمالي</td><td style="text-align:left;">${Number(o.total||itemsTotal).toLocaleString()} ل.س</td></tr></table>
-            <p style="text-align:center; font-size:9px; margin-top:8px;">شكراً لاختياركم شاهين إكسبريس 🦅</p>
-        </div>`;
-    }
-
     function _getPrintQueue() {
         try { return JSON.parse(localStorage.getItem('sh_print_queue') || '[]'); } catch(e) { return []; }
     }
@@ -1065,30 +1006,49 @@ window.createMinimalSupabaseClient = createMinimalSupabaseClient;
 
         if (_getPrintedSet().has(String(o.id))) { posLog('info', `تم تجاهل طباعة مكررة لطلب #${String(o.id).slice(-6)} (طُبع مسبقاً على هذا الجهاز)`); return; }
 
-        // [FIX-SILENT-PRINT-QUICKPRINTER] إن كان Quick Printer مفعَّلاً من إعدادات هذا الجهاز، نستخدمه
-        // فقط (طباعة صامتة حقيقية)، وإلا نستخدم الجسر الاحتياطي (نافذة تأكيد واحدة) — لا نستخدم
-        // الاثنين معاً أبداً لتجنّب طباعة الإيصال مرتين بالخطأ
-        const widthMm = (_posDeviceInfo && _posDeviceInfo.paper_width_mm) || 58;
-        const html = _buildReceiptHtml(o, widthMm);
-        try {
-            if (_tryNativeAidlSilent(o)) {
-                // نجح استدعاء الجسر الأصلي (إن وُجد) — لا حاجة لأي طريقة أخرى
-            } else if (_posDeviceInfo && _posDeviceInfo.use_quickprinter === true) {
-                _tryQuickPrinterSilent(o);
-            } else {
-                _printViaIframeFallback(html);
-            }
+        // [FIX-LOCAL-PRINT-SERVICE] الطريقة الوحيدة المعتمَدة الآن: إرسال بيانات الإيصال إلى خدمة
+        // الطباعة المحلية العاملة على نفس الجهاز عبر المنفذ 9100 — لا نافذة طباعة، لا معاينة، لا تدخل
+        const result = await _sendToLocalPrintService(o);
+        if (result.ok) {
             _markPrinted(o.id);
-            // [FIX-HONEST-LIMIT] لا توجد طريقة في معيار الويب لمعرفة هل اكتملت الطباعة فعلياً بنجاح بعد
-            // فتح نافذة الطباعة (window.print لا تُرجع نتيجة) — نُسجِّلها "مطبوعة" تقديرياً، وزر "إعادة
-            // الطباعة" يبقى متاحاً دائماً يدوياً لأي تصحيح لازم
             _setOrderPrintStatus(o.id, 'printed', null);
-            posLog('success', `🖨️ تم إرسال طلب الطباعة للطلب #${String(o.id).slice(-6)} إلى نظام الطباعة`);
-        } catch(e) {
-            posLog('failed', `❌ فشل إرسال أمر الطباعة للطلب #${String(o.id).slice(-6)}: ${e.message}`);
-            _setOrderPrintStatus(o.id, 'failed', e.message);
+            posLog('success', `🖨️ تمت طباعة الطلب #${String(o.id).slice(-6)} عبر خدمة الطباعة المحلية بنجاح`);
+        } else {
+            _setOrderPrintStatus(o.id, 'failed', result.reason);
             _queuePrint(o);
-            _showPrintFailureBanner(o, e.message);
+            _showPrintFailureBanner(o, result.reason);
+            posLog('failed', `❌ فشلت طباعة الطلب #${String(o.id).slice(-6)}: ${result.reason}`);
+        }
+    }
+
+    // [FIX-LOCAL-PRINT-SERVICE] الاتصال بخدمة الطباعة المحلية عبر fetch عادية — هذا هو المسار الوحيد
+    // المعتمَد الآن، بلا أي نافذة طباعة أو معاينة أو تدخل بشري على الإطلاق
+    async function _sendToLocalPrintService(o) {
+        const text = _buildReceiptQuickPrinterText(o).replace(/<[^>]+>/g, '\n');
+        try {
+            const resp = await fetch('http://localhost:9100/print', {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain' },
+                body: text
+            });
+            if (!resp.ok) return { ok: false, reason: 'خدمة الطباعة المحلية ردّت بخطأ HTTP ' + resp.status };
+            const data = await resp.json().catch(() => ({}));
+            if (data.accepted === false) return { ok: false, reason: 'الطابعة الحرارية غير متصلة حالياً (تحقّق من الورق/الغطاء)' };
+            return { ok: true };
+        } catch(e) {
+            // فشل الاتصال بالكامل — يعني خدمة الطباعة المحلية غير مُشغَّلة على هذا الجهاز إطلاقاً
+            return { ok: false, reason: 'تعذّر الوصول لخدمة الطباعة المحلية على المنفذ 9100 — تأكد أنها مُثبَّتة ومُشغَّلة على هذا الجهاز: ' + e.message };
+        }
+    }
+
+    // [FIX-LOCAL-PRINT-SERVICE] فحص دوري لحالة خدمة الطباعة المحلية — يُستخدَم لعرض شارة الحالة
+    async function _checkLocalPrintServiceStatus() {
+        try {
+            const resp = await fetch('http://localhost:9100/status', { method: 'GET' });
+            const data = await resp.json();
+            return { running: true, printerConnected: data.printerConnected === true };
+        } catch(e) {
+            return { running: false, printerConnected: false };
         }
     }
 
@@ -1140,57 +1100,17 @@ window.createMinimalSupabaseClient = createMinimalSupabaseClient;
     // الأصلي مباشرة (بدل window.print() العادية التي تتجاهلها أغلب أغلفة WebView العامة بصمت).
     // بما أن هذا الجسر يطبع الصفحة الرئيسية نفسها (لا الـiframe المخفي كما كان سابقاً)، أصبح محتوى
     // الإيصال يُحقَن في عنصر مخفي ضمن الصفحة الرئيسية، مع إخفاء كل شيء آخر أثناء الطباعة فقط عبر CSS
-    function _printViaIframeFallback(html) {
-        let area = document.getElementById('native-print-area');
-        if (!area) {
-            area = document.createElement('div');
-            area.id = 'native-print-area';
-            area.style.display = 'none';
-            document.body.appendChild(area);
-        }
-        const widthMm = (_posDeviceInfo && _posDeviceInfo.paper_width_mm) || 58;
-        area.innerHTML = '<style id="native-print-style">' +
-            '@media print {' +
-            '  body * { visibility: hidden !important; }' +
-            '  #native-print-area, #native-print-area * { visibility: visible !important; }' +
-            '  #native-print-area { display: block !important; position: absolute; top: 0; left: 0; right: 0; }' +
-            '  @page { size: ' + widthMm + 'mm auto; margin: 0; }' +
-            '}' +
-            '</style>' + html;
-
-        try {
-            if (typeof Website2APK !== 'undefined' && typeof Website2APK.printPage === 'function') {
-                // [FIX-NATIVE-PRINT-BRIDGE] الجسر الأصلي الحقيقي — يصل مباشرة لطابعة النظام المسجَّلة
-                Website2APK.printPage();
-                posLog('success', '🖨️ تم استدعاء Website2APK.printPage() — الجسر الأصلي للطباعة');
-            } else {
-                // نافذة طباعة المتصفح القياسية — تعمل عند التجربة من متصفح عادي خارج التطبيق فقط
-                window.print();
-                posLog('info', 'Website2APK.printPage() غير متاحة هنا (تجربة من متصفح عادي) — استُخدمت window.print() كاحتياط');
-            }
-        } finally {
-            setTimeout(() => { area.style.display = 'none'; }, 1000);
-        }
-    }
-
-    function printOrderReceiptById(orderId) {
+    async function printOrderReceiptById(orderId) {
         const o = allOrders.find(x => String(x.id) === String(orderId)) || historyOrders.find(x => String(x.id) === String(orderId));
         if (!o) { showToast('⚠️ تعذّر العثور على بيانات الطلب للطباعة'); return; }
-        const widthMm = (_posDeviceInfo && _posDeviceInfo.paper_width_mm) || 58;
-        const html = _buildReceiptHtml(o, widthMm);
-        try {
-            if (_tryNativeAidlSilent(o)) {
-                // الجسر الأصلي نجح — لا حاجة لطريقة أخرى
-            } else if (_posDeviceInfo && _posDeviceInfo.use_quickprinter === true) {
-                _tryQuickPrinterSilent(o);
-            } else {
-                _printViaIframeFallback(html);
-            }
-            posLog('success', `🖨️ طباعة يدوية تم إرسالها للطلب #${String(orderId).slice(-6)}`);
+        const result = await _sendToLocalPrintService(o);
+        if (result.ok) {
+            posLog('success', `🖨️ طباعة يدوية ناجحة للطلب #${String(orderId).slice(-6)} عبر خدمة الطباعة المحلية`);
             _setOrderPrintStatus(orderId, 'printed', null);
-        } catch(e) {
-            posLog('failed', `❌ فشلت الطباعة اليدوية: ${e.message}`);
-            showToast('⚠️ تعذّر فتح نافذة الطباعة: ' + e.message);
+            showToast('✅ تمت إعادة الطباعة بنجاح');
+        } else {
+            posLog('failed', `❌ فشلت الطباعة اليدوية: ${result.reason}`);
+            showToast('⚠️ فشلت الطباعة: ' + result.reason);
         }
     }
 
