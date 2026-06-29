@@ -978,6 +978,29 @@ window.createMinimalSupabaseClient = createMinimalSupabaseClient;
 
     // [FIX-SILENT-PRINT-QUICKPRINTER] استدعاء Quick Printer مباشرة عبر intent:// الموثَّق رسمياً —
     // يحاول الطباعة الصامتة (avoid_dialog) أولاً، فإن لم يكن مثبَّتاً سيفشل الانتقال بصمت ولن يحدث شيء
+    // [FIX-SILENT-PRINT-NATIVE-AIDL] جسر طباعة صامتة حقيقي عبر AIDL — يعمل فقط إن كان التطبيق مبنياً
+    // بمشروع Android Studio مخصَّص (وليس Website2APK) يُعرِّف window.AndroidPrinter عبر addJavascriptInterface
+    function _tryNativeAidlSilent(o) {
+        try {
+            if (typeof window.AndroidPrinter === 'undefined' || !window.AndroidPrinter.printReceipt) {
+                return false;
+            }
+            const text = _buildReceiptQuickPrinterText(o).replace(/<[^>]+>/g, '\n'); // تبسيط الأوسمة لنص عادي للطباعة الأصلية
+            window.AndroidPrinter.printReceipt(text);
+            posLog('info', `📡 تم إرسال أمر طباعة صامتة عبر الجسر الأصلي (AIDL) للطلب #${String(o.id).slice(-6)}`);
+            return true;
+        } catch(e) {
+            posLog('failed', 'فشل استدعاء جسر AIDL الأصلي: ' + e.message);
+            return false;
+        }
+    }
+    // استقبال نتيجة الطباعة الحقيقية من الكود الأصلي (نجاح/فشل فعلي، لا تقديري)
+    window.onAndroidPrinterEvent = function(status, message) {
+        if (status === 'print_success') posLog('success', '✅ ' + message);
+        else if (status === 'print_failed') posLog('failed', '❌ ' + message);
+        else posLog('info', message);
+    };
+
     function _tryQuickPrinterSilent(o) {
         try {
             const text = '<PRINTER avoid_dialog avoid_error_button>' + _buildReceiptQuickPrinterText(o);
@@ -1048,7 +1071,9 @@ window.createMinimalSupabaseClient = createMinimalSupabaseClient;
         const widthMm = (_posDeviceInfo && _posDeviceInfo.paper_width_mm) || 58;
         const html = _buildReceiptHtml(o, widthMm);
         try {
-            if (_posDeviceInfo && _posDeviceInfo.use_quickprinter === true) {
+            if (_tryNativeAidlSilent(o)) {
+                // نجح استدعاء الجسر الأصلي (إن وُجد) — لا حاجة لأي طريقة أخرى
+            } else if (_posDeviceInfo && _posDeviceInfo.use_quickprinter === true) {
                 _tryQuickPrinterSilent(o);
             } else {
                 _printViaIframeFallback(html);
@@ -1154,7 +1179,9 @@ window.createMinimalSupabaseClient = createMinimalSupabaseClient;
         const widthMm = (_posDeviceInfo && _posDeviceInfo.paper_width_mm) || 58;
         const html = _buildReceiptHtml(o, widthMm);
         try {
-            if (_posDeviceInfo && _posDeviceInfo.use_quickprinter === true) {
+            if (_tryNativeAidlSilent(o)) {
+                // الجسر الأصلي نجح — لا حاجة لطريقة أخرى
+            } else if (_posDeviceInfo && _posDeviceInfo.use_quickprinter === true) {
                 _tryQuickPrinterSilent(o);
             } else {
                 _printViaIframeFallback(html);
