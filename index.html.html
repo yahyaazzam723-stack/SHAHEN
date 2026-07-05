@@ -4336,14 +4336,13 @@
 
         if(currentOrderID) return siteNotify("أنهِ الطلب الحالي أولاً يا صقر! 🦅");
 
-        // إعادة فحص الحالة قبل القبول الفعلي
-        const { data: latestCheck } = await supabaseClient.from('sh_public_orders').select('status, is_consultation, service_type, pickup_lat, pickup_lng, lat, lng').eq('id', id).single();
+        // إعادة فحص الحالة قبل القبول الفعلي (استعلام واحد سريع لا غنى عنه للأمان)
+        const { data: latestCheck } = await supabaseClient.from('sh_public_orders').select('status, is_consultation, service_type').eq('id', id).single();
         if(latestCheck && latestCheck.is_consultation === true) { siteNotify("هذا الطلب استشارة صيدلانية فقط، لا يمكن قنصه ❌"); refreshOrders(); return; }
-        // [FIX-PICKUP-LEAK] حماية أخيرة وحاسمة: طلب استلام من المطعم لا يجوز قبوله من أي مندوب إطلاقاً،
-        // بصرف النظر عن قيمة status الحالية له (حتى لو انتهى بها الأمر إلى 'searching' لأي سبب)
+        // [FIX-PICKUP-LEAK] حماية أخيرة وحاسمة: طلب استلام من المطعم لا يجوز قبوله من أي مندوب إطلاقاً
         if(latestCheck && latestCheck.service_type === 'pickup') { siteNotify("هذا طلب استلام ذاتي من المطعم — غير متاح للمندوبين ❌"); refreshOrders(); return; }
         if(latestCheck && latestCheck.status !== 'searching' && latestCheck.status !== 'pending') { siteNotify("للأسف! سبقك أحد الصقور وقنص الطلب 🦅"); refreshOrders(); return; }
-        
+
         const driverName = currentUserData.name || "صقر شاهين";
         const driverPhone = currentUserData.phone || "00000000";
 
@@ -4352,49 +4351,15 @@
         const _driverLatAtAccept = window._lastKnownLat || null;
         const _driverLngAtAccept = window._lastKnownLng || null;
 
-        // ===== FIX-LOC-DRIVER: نسخ موقع المتجر من المطعم إلى الطلب عند القبول =====
-        let _storePickupLat = null, _storePickupLng = null, _storeResAddr = null;
-        try {
-            // جلب بيانات الطلب لمعرفة restaurant_id
-            const { data: _orderForStore } = await supabaseClient
-                .from('sh_public_orders')
-                .select('restaurant_id, pickup_lat, pickup_lng, res_address, res_type')
-                .eq('id', id).maybeSingle();
-            // إذا الطلب لم تكن له إحداثيات متجر — نجلبها من جدول المطاعم
-            if (_orderForStore && !_orderForStore.pickup_lat && _orderForStore.restaurant_id) {
-                const _resTbl = (_orderForStore.res_type === 'pharmacy' || _orderForStore.res_type === 'pharmacy_delivery')
-                    ? 'pharmacies' : 'restaurants';
-                const { data: _resRow } = await supabaseClient
-                    .from(_resTbl)
-                    .select('pickup_lat, pickup_lng, maps_url, res_address, address')
-                    .eq('id', _orderForStore.restaurant_id).maybeSingle();
-                if (_resRow) {
-                    _storePickupLat  = _resRow.pickup_lat  || null;
-                    _storePickupLng  = _resRow.pickup_lng  || null;
-                    _storeResAddr    = _resRow.res_address || _resRow.address || _resRow.maps_url || null;
-                    // [FIX-MAPS-URL] إذا لم تتوفر إحداثيات محفوظة لكن يوجد رابط Google Maps، نستخرج الإحداثيات منه
-                    if ((!_storePickupLat || !_storePickupLng) && _resRow.maps_url) {
-                        const _resolved = await _resolveMapsUrlCoords(_resRow.maps_url);
-                        if (_resolved) {
-                            _storePickupLat = _resolved.lat;
-                            _storePickupLng = _resolved.lng;
-                            // حفظ الإحداثيات المستخرجة في جدول المطعم نفسه لتفادي إعادة الاستخراج لاحقاً (تصحيح ذاتي للبيانات)
-                            try { await supabaseClient.from(_resTbl).update({ pickup_lat: _resolved.lat, pickup_lng: _resolved.lng }).eq('id', _orderForStore.restaurant_id); } catch(_e2) {}
-                        }
-                    }
-                }
-            } else if (_orderForStore) {
-                // الإحداثيات موجودة بالفعل في الطلب
-                _storePickupLat = _orderForStore.pickup_lat;
-                _storePickupLng = _orderForStore.pickup_lng;
-                _storeResAddr   = _orderForStore.res_address;
-            }
-        } catch (_locErr) {}
-        // ===== نهاية FIX-LOC-DRIVER =====
-
-        const _acceptUpdate = { 
-            status: 'accepted', 
-            driver_id: currentUserData.id, 
+        // [PERF-FIX-INSTANT-ACCEPT] الحقل الحرج الوحيد قبل الانتقال للشاشة هو تحديث حالة القبول نفسه
+        // (المحمي ضد التسابق). كل ما عدا ذلك — موقع المطعم، التحديث الثانوي لجدول orders، تسجيل
+        // الدوام، إشعار العميل، رسالة الحالة، إعادة الاتصال — لا علاقة له بقرار "هل قُبل الطلب أم لا"،
+        // فلا يجوز أن يُبقي المندوب منتظراً على الشاشة بسببه. هذه العمليات تنتقل الآن للخلفية بعد
+        // الانتقال المباشر لشاشة الطلب، بدل تنفيذها بالتسلسل (كل واحدة تنتظر التي قبلها) قبله — وهذا
+        // بالضبط كان سبب التأخير الملموس (حتى 10 ثوانٍ) الذي وصفته.
+        const _acceptUpdate = {
+            status: 'accepted',
+            driver_id: currentUserData.id,
             driver_phone: driverPhone,
             driver_name: driverName,
             restaurant_name: restaurantName,
@@ -4403,13 +4368,9 @@
             driver_lng_at_accept: _driverLngAtAccept,
             driver_stage: 'to_restaurant' // [MAPBOX-TRACK] المرحلة الأولى: متجه للمطعم
         };
-        if (_storePickupLat) { _acceptUpdate.pickup_lat = _storePickupLat; _acceptUpdate.pickup_lng = _storePickupLng; }
-        if (_storeResAddr)   { _acceptUpdate.res_address = _storeResAddr; }
 
-        // [FIX-RACE-CONDITION] حماية ذرّية حقيقية ضد قبول مندوبين لنفس الطلب في نفس اللحظة: الشرط
-        // .in('status', ['searching','pending']) يجعل هذا التحديث ينجح فقط إن كان الطلب لا يزال متاحاً
-        // فعلياً وقت الكتابة في قاعدة البيانات (لا وقت الفحص الأولي على الشاشة، الذي قد يكون قديماً
-        // بأجزاء من الثانية) — مع التحقق من عدد الصفوف المتأثرة فعلياً لمعرفة هل فاز هذا المندوب بالسبق
+        // [FIX-RACE-CONDITION] حماية ذرّية حقيقية ضد قبول مندوبين لنفس الطلب في نفس اللحظة — هذا هو
+        // الاستعلام الحرج الوحيد الذي يستحق انتظاره فعلياً قبل عرض شاشة الطلب
         const { data: _acceptedRows, error: error1 } = await supabaseClient.from('sh_public_orders')
             .update(_acceptUpdate).eq('id', id).in('status', ['searching', 'pending']).select('id');
 
@@ -4430,51 +4391,97 @@
             return;
         }
 
-        const { error: error2 } = await supabaseClient.from('orders').update({ 
-            status: 'accepted', 
-            driver_id: currentUserData.id, 
-            driver_phone: driverPhone,
-            driver_name: driverName,
-            restaurant_name: restaurantName,
-            accepted_at: _acceptedAtTime
-        }).eq('id', id);
-        if (error2) console.error('[FIX-RACE-CONDITION] فشل تحديث جدول orders الثانوي (لا يؤثر على نجاح القبول الأساسي):', error2);
+        // ===== [PERF-FIX-INSTANT-ACCEPT] نجح القبول — انتقال فوري لشاشة الطلب الآن =====
+        currentOrderID = id;
+        localStorage.setItem('active_order_id', id);
+        nav('p-active-order');
+        // reconnectActiveOrder هو ما يملأ محتوى شاشة الطلب فعلياً (اسم المطعم، الفاتورة، الأزرار...)
+        // عبر استعلام واحد سريع — يستحق الانتظار كي لا تظهر الشاشة فارغة لحظياً، على عكس بقية المهام
+        // الأبطأ (حل موقع المطعم، تسجيل الدوام، الإشعارات) التي لا تؤثر على ما يراه المندوب فوراً
+        await reconnectActiveOrder(id);
+        refreshOrders();
+        _startActiveOrderPoll(id);
+        siteNotify("تم قنص الطلب بنجاح! 🦅");
 
-        if(!error1) {
-            currentOrderID = id;
-            localStorage.setItem('active_order_id', id);
-            // ===== تسجيل قبول الطلب في سجل الدوام =====
-            const _respSeconds = window._orderShownAt && window._orderShownAt[id]
-                ? Math.round((_acceptTime - window._orderShownAt[id]) / 1000) : 0;
-            const { data: _acceptedOrderData } = await supabaseClient.from('sh_public_orders').select('created_at,restaurant_name,res,customer_name,customer_id').eq('id', id).maybeSingle();
-            if (_acceptedOrderData) await _logAcceptedOrderDuringShift(id, _acceptedOrderData, _respSeconds);
-            // ===== FIX-ACCEPT-1: إرسال إشعار للعميل فوراً عند القبول =====
+        // ===== كل ما يلي يعمل في الخلفية دون أي تأثير على سرعة الانتقال أعلاه =====
+        (async () => {
             try {
-                if (_acceptedOrderData && _acceptedOrderData.customer_id) {
-                    await supabaseClient.from('notifications').insert([{
-                        user_id: _acceptedOrderData.customer_id,
-                        message: '✅ تم قبول طلبك من قبل المندوب ' + driverName + '! هو في الطريق إليك 🦅',
-                        is_read: false,
-                        created_at: new Date().toISOString()
-                    }]);
-                }
-            } catch(_nErr) {}
-            // ===== نهاية إشعار العميل =====
-            // [DRIVER-STATUS-MSG] رسالة ثابتة في دردشة الطلب — تظهر للعميل في منطقة حالة الطلب
-            await _sendDriverStatusMsg(id, '✅ استلمت طلبك، في طريقي إلى المطعم 🏪');
-            // ===== نهاية تسجيل الدوام =====
-            // ===== تسجيل موقع القبول محذوف =====
-            await reconnectActiveOrder(id);
-            initSystem(); 
-            nav('p-active-order');
-            refreshOrders();
-            // ===== FIX-POLL-DRV: بدء Polling احتياطي للطلب النشط =====
-            _startActiveOrderPoll(id);
-            siteNotify("تم قنص الطلب بنجاح! 🦅");
-        } else {
-            const errMsg = error1?.message || error2?.message || "فشل القنص";
-            siteNotify("فشل القنص: " + errMsg);
-        }
+                // ===== FIX-LOC-DRIVER: نسخ موقع المتجر من المطعم إلى الطلب (تحديث لاحق، غير حرج للتوقيت) =====
+                let _storePickupLat = null, _storePickupLng = null, _storeResAddr = null;
+                try {
+                    const { data: _orderForStore } = await supabaseClient
+                        .from('sh_public_orders')
+                        .select('restaurant_id, pickup_lat, pickup_lng, res_address, res_type')
+                        .eq('id', id).maybeSingle();
+                    if (_orderForStore && !_orderForStore.pickup_lat && _orderForStore.restaurant_id) {
+                        const _resTbl = (_orderForStore.res_type === 'pharmacy' || _orderForStore.res_type === 'pharmacy_delivery')
+                            ? 'pharmacies' : 'restaurants';
+                        const { data: _resRow } = await supabaseClient
+                            .from(_resTbl)
+                            .select('pickup_lat, pickup_lng, maps_url, res_address, address')
+                            .eq('id', _orderForStore.restaurant_id).maybeSingle();
+                        if (_resRow) {
+                            _storePickupLat  = _resRow.pickup_lat  || null;
+                            _storePickupLng  = _resRow.pickup_lng  || null;
+                            _storeResAddr    = _resRow.res_address || _resRow.address || _resRow.maps_url || null;
+                            if ((!_storePickupLat || !_storePickupLng) && _resRow.maps_url) {
+                                const _resolved = await _resolveMapsUrlCoords(_resRow.maps_url);
+                                if (_resolved) {
+                                    _storePickupLat = _resolved.lat;
+                                    _storePickupLng = _resolved.lng;
+                                    try { await supabaseClient.from(_resTbl).update({ pickup_lat: _resolved.lat, pickup_lng: _resolved.lng }).eq('id', _orderForStore.restaurant_id); } catch(_e2) {}
+                                }
+                            }
+                        }
+                    } else if (_orderForStore) {
+                        _storePickupLat = _orderForStore.pickup_lat;
+                        _storePickupLng = _orderForStore.pickup_lng;
+                        _storeResAddr   = _orderForStore.res_address;
+                    }
+                    if (_storePickupLat || _storeResAddr) {
+                        const _locUpdate = {};
+                        if (_storePickupLat) { _locUpdate.pickup_lat = _storePickupLat; _locUpdate.pickup_lng = _storePickupLng; }
+                        if (_storeResAddr)   { _locUpdate.res_address = _storeResAddr; }
+                        await supabaseClient.from('sh_public_orders').update(_locUpdate).eq('id', id);
+                    }
+                } catch (_locErr) {}
+                // ===== نهاية FIX-LOC-DRIVER =====
+
+                const { error: error2 } = await supabaseClient.from('orders').update({
+                    status: 'accepted',
+                    driver_id: currentUserData.id,
+                    driver_phone: driverPhone,
+                    driver_name: driverName,
+                    restaurant_name: restaurantName,
+                    accepted_at: _acceptedAtTime
+                }).eq('id', id);
+                if (error2) console.error('[FIX-RACE-CONDITION] فشل تحديث جدول orders الثانوي (لا يؤثر على نجاح القبول الأساسي):', error2);
+
+                // ===== تسجيل قبول الطلب في سجل الدوام =====
+                const _respSeconds = window._orderShownAt && window._orderShownAt[id]
+                    ? Math.round((Date.now() - window._orderShownAt[id]) / 1000) : 0;
+                const { data: _acceptedOrderData } = await supabaseClient.from('sh_public_orders').select('created_at,restaurant_name,res,customer_name,customer_id').eq('id', id).maybeSingle();
+                if (_acceptedOrderData) await _logAcceptedOrderDuringShift(id, _acceptedOrderData, _respSeconds);
+                // ===== FIX-ACCEPT-1: إرسال إشعار للعميل فوراً عند القبول =====
+                try {
+                    if (_acceptedOrderData && _acceptedOrderData.customer_id) {
+                        await supabaseClient.from('notifications').insert([{
+                            user_id: _acceptedOrderData.customer_id,
+                            message: '✅ تم قبول طلبك من قبل المندوب ' + driverName + '! هو في الطريق إليك 🦅',
+                            is_read: false,
+                            created_at: new Date().toISOString()
+                        }]);
+                    }
+                } catch(_nErr) {}
+                // ===== نهاية إشعار العميل =====
+                // [DRIVER-STATUS-MSG] رسالة ثابتة في دردشة الطلب — تظهر للعميل في منطقة حالة الطلب
+                await _sendDriverStatusMsg(id, '✅ استلمت طلبك، في طريقي إلى المطعم 🏪');
+                // ===== نهاية تسجيل الدوام =====
+                initSystem();
+            } catch(_bgErr) {
+                console.error('[PERF-FIX-INSTANT-ACCEPT] خطأ في مهام الخلفية بعد القبول (لا يؤثر على القبول نفسه):', _bgErr);
+            }
+        })();
     }
 
     // [DRIVER-STATUS-MSG] دالة موحّدة لإرسال رسالة حالة ثابتة للعميل
